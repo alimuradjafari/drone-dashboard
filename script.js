@@ -45,6 +45,7 @@ class TelemetryManager {
     /**
      * Start simulated telemetry updates (for testing without hardware)
      */
+    // this is for simulation (i can remove this when connected to the hardware, and remove the this.isSimulating,this.updateInterval) 
     startSimulation() {
         if (this.updateInterval) clearInterval(this.updateInterval);
         
