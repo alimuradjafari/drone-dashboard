@@ -1,0 +1,706 @@
+// ============================================================
+// DRONE CHARGING STATION DASHBOARD - MAIN JAVASCRIPT
+// ============================================================
+
+/**
+ * TELEMETRY DATA MANAGER
+ * Handles WebSocket connection and data state
+ */
+class TelemetryManager {
+    constructor() {
+        // Default telemetry state
+        this.data = {
+            droneId: 'Drone-001',
+            connectionStatus: 'Connected',
+            armed: false,
+            flightMode: 'Stabilize',
+            missionStatus: 'Idle',
+            position: { lat: 37.7749, lng: -122.4194, alt: 42, heading: 127 },
+            navigation: { groundSpeed: 8.4, distanceFromHome: 312 },
+            attitude: { roll: 2, pitch: -5, yaw: 127 },
+            gps: { fixType: '3D Fix', satellites: 14, hdop: 0.82 },
+            battery: { percent: 72, voltage: 22.4, current: 18.6, capacity: 3240, timeLeft: 11, health: 'Healthy' },
+            charging: { docked: false, status: 'Standby', progress: 62, voltage: 24.6, current: 4.2, eta: 18 },
+            communication: { rssi: -68, linkStatus: 'Active', packetLoss: 0.4, lastUpdate: Date.now() },
+            alerts: [
+                { type: 'ok', icon: 'ti-check', message: 'All systems nominal' }
+            ]
+        };
+        
+        this.listeners = [];
+        this.ws = null;
+        this.reconnectTimer = null;
+        this.updateInterval = null;
+        this.isSimulating = true;
+        
+        // Start simulation
+        this.startSimulation();
+    }
+    
+    /**
+     * Start simulated telemetry updates (for testing without hardware)
+     */
+    // script.js - Replace these methods in TelemetryManager class
+
+    /**
+     * Start simulated telemetry updates (for testing without hardware)
+     */
+    startSimulation() {
+        if (this.updateInterval) clearInterval(this.updateInterval);
+        
+        this.updateInterval = setInterval(() => {
+            if (!this.isSimulating) return;
+            
+            // Only simulate if not connected to WebSocket
+            if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+                return; // WebSocket is handling updates
+            }
+            
+            // Simulate telemetry changes
+            const lat = this.data.position.lat + (Math.random() - 0.5) * 0.0001;
+            const lng = this.data.position.lng + (Math.random() - 0.5) * 0.0001;
+            const alt = Math.max(0, this.data.position.alt + (Math.random() - 0.5) * 2);
+            let heading = (this.data.position.heading + (Math.random() - 0.5) * 5) % 360;
+            if (heading < 0) heading += 360;
+            
+            const groundSpeed = Math.max(0, this.data.navigation.groundSpeed + (Math.random() - 0.5) * 1);
+            const distanceHome = Math.max(0, this.data.navigation.distanceFromHome + (Math.random() - 0.5) * 2);
+            const batteryPercent = Math.max(0, this.data.battery.percent - (Math.random() * 0.3));
+            
+            this.updateData({
+                position: { lat, lng, alt, heading },
+                navigation: { groundSpeed, distanceFromHome },
+                battery: { percent: Math.round(batteryPercent) },
+                communication: { lastUpdate: Date.now() }
+            });
+        }, 1500);
+    }
+    
+    /**
+     * Connect to WebSocket for real telemetry
+     */
+    connectWebSocket(url = 'ws://localhost:8000/ws/telemetry') {
+        try {
+            console.log('🔌 Connecting to WebSocket:', url);
+            this.ws = new WebSocket(url);
+            
+            this.ws.onopen = () => {
+                console.log('✅ WebSocket connected successfully!');
+                this.isSimulating = false;
+                this.updateData({ 
+                    connectionStatus: 'Connected',
+                    communication: { linkStatus: 'Connected' }
+                });
+                // Show a success message
+                this.addAlert('Connected to telemetry server', 'ok');
+            };
+            
+            this.ws.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    console.log('📡 Received telemetry:', data);
+                    
+                    // Update the data
+                    this.updateData({
+                        ...data,
+                        connectionStatus: 'Connected',
+                        communication: { 
+                            ...data.communication,
+                            lastUpdate: Date.now() 
+                        }
+                    });
+                    
+                    // Check for low battery alert
+                    if (data.battery && data.battery.percent < 30) {
+                        this.addAlert(`Battery at ${data.battery.percent}% - Land soon!`, 'warn');
+                    }
+                    if (data.battery && data.battery.percent < 15) {
+                        this.addAlert(`CRITICAL: Battery at ${data.battery.percent}%!`, 'crit');
+                    }
+                    
+                } catch (error) {
+                    console.error('❌ Failed to parse WebSocket message:', error);
+                }
+            };
+            
+            this.ws.onclose = () => {
+                console.log('❌ WebSocket disconnected');
+                this.updateData({ 
+                    connectionStatus: 'Disconnected',
+                    communication: { linkStatus: 'Disconnected' }
+                });
+                this.addAlert('Lost connection to telemetry server', 'crit');
+                
+                // Fallback to simulation
+                this.isSimulating = true;
+                if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+                this.reconnectTimer = setTimeout(() => {
+                    console.log('🔄 Attempting to reconnect...');
+                    this.connectWebSocket(url);
+                }, 5000);
+            };
+            
+            this.ws.onerror = (error) => {
+                console.error('❌ WebSocket error:', error);
+                this.ws.close();
+            };
+        } catch (error) {
+            console.error('❌ WebSocket connection failed:', error);
+            this.isSimulating = true;
+            if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+            this.reconnectTimer = setTimeout(() => {
+                console.log('🔄 Retrying connection...');
+                this.connectWebSocket(url);
+            }, 5000);
+        }
+    }
+    
+    /**
+     * Update telemetry data
+     */
+    updateData(newData) {
+        this.data = this.deepMerge(this.data, newData);
+        this.notifyListeners();
+    }
+    
+    /**
+     * Deep merge helper
+     */
+    deepMerge(target, source) {
+        const result = { ...target };
+        for (const key in source) {
+            if (source[key] && typeof source[key] === 'object' && !Array.isArray(source[key])) {
+                result[key] = this.deepMerge(target[key] || {}, source[key]);
+            } else {
+                result[key] = source[key];
+            }
+        }
+        return result;
+    }
+    
+    /**
+     * Add alert
+     */
+    addAlert(message, type = 'ok') {
+        const alert = { type, icon: this.getAlertIcon(type), message };
+        this.data.alerts = [alert, ...this.data.alerts.slice(0, 9)];
+        this.notifyListeners();
+    }
+    
+    /**
+     * Get alert icon based on type
+     */
+    getAlertIcon(type) {
+        const icons = {
+            'ok': 'ti-check',
+            'warn': 'ti-alert-triangle',
+            'crit': 'ti-x',
+            'info': 'ti-info-circle'
+        };
+        return icons[type] || 'ti-check';
+    }
+    
+    /**
+     * Subscribe to telemetry updates
+     */
+    subscribe(listener) {
+        this.listeners.push(listener);
+        listener(this.data);
+        return () => {
+            this.listeners = this.listeners.filter(l => l !== listener);
+        };
+    }
+    
+    /**
+     * Notify all listeners
+     */
+    notifyListeners() {
+        for (const listener of this.listeners) {
+            listener(this.data);
+        }
+    }
+    
+    /**
+     * Send command to drone
+     */
+    sendCommand(command) {
+        if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+            this.ws.send(JSON.stringify(command));
+            return true;
+        }
+        console.warn('WebSocket not connected, command not sent');
+        return false;
+    }
+    
+    /**
+     * Clean up resources
+     */
+    destroy() {
+        if (this.updateInterval) clearInterval(this.updateInterval);
+        if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+        if (this.ws) this.ws.close();
+    }
+}
+
+// ============================================================
+// DASHBOARD RENDERER
+// ============================================================
+class DashboardRenderer {
+    constructor(telemetry) {
+        this.telemetry = telemetry;
+        this.map = null;
+        this.marker = null;
+        this.trail = [];
+        this.trailPolyline = null;
+        this.homeMarker = null;
+        this.stationMarker = null;
+        this.alertTimeout = null;
+        
+        // DOM element references
+        this.elements = this.getElements();
+        
+        // Initialize map
+        this.initMap();
+        
+        // Subscribe to telemetry updates
+        this.telemetry.subscribe((data) => this.render(data));
+        
+        // Update time counter
+        this.startTimeCounter();
+    }
+    
+    /**
+     * Get all DOM element references
+     */
+    getElements() {
+        return {
+            droneId: document.getElementById('droneId'),
+            connBadge: document.getElementById('connBadge'),
+            armedBadge: document.getElementById('armedBadge'),
+            modeBadge: document.getElementById('modeBadge'),
+            missionBadge: document.getElementById('missionBadge'),
+            lastUpdateTime: document.getElementById('lastUpdateTime'),
+            
+            altitude: document.getElementById('altitude'),
+            groundSpeed: document.getElementById('groundSpeed'),
+            heading: document.getElementById('heading'),
+            distanceHome: document.getElementById('distanceHome'),
+            
+            roll: document.getElementById('roll'),
+            pitch: document.getElementById('pitch'),
+            yaw: document.getElementById('yaw'),
+            
+            gpsFixBadge: document.getElementById('gpsFixBadge'),
+            gpsSats: document.getElementById('gpsSats'),
+            gpsHdop: document.getElementById('gpsHdop'),
+            
+            batteryPercent: document.getElementById('batteryPercent'),
+            batteryHealth: document.getElementById('batteryHealth'),
+            batteryBar: document.getElementById('batteryBar'),
+            batteryVoltage: document.getElementById('batteryVoltage'),
+            batteryCurrent: document.getElementById('batteryCurrent'),
+            batteryCapacity: document.getElementById('batteryCapacity'),
+            flightTimeLeft: document.getElementById('flightTimeLeft'),
+            
+            dockingStatus: document.getElementById('dockingStatus'),
+            chargingStatus: document.getElementById('chargingStatus'),
+            chargeProgressBar: document.getElementById('chargeProgressBar'),
+            chargeProgress: document.getElementById('chargeProgress'),
+            chargingVoltage: document.getElementById('chargingVoltage'),
+            chargingCurrent: document.getElementById('chargingCurrent'),
+            chargingEta: document.getElementById('chargingEta'),
+            
+            rssiValue: document.getElementById('rssiValue'),
+            rssiBars: document.getElementById('rssiBars'),
+            linkStatus: document.getElementById('linkStatus'),
+            packetLoss: document.getElementById('packetLoss'),
+            
+            alertsGrid: document.getElementById('alertsGrid')
+        };
+    }
+    
+    /**
+     * Initialize Leaflet map
+     */
+    initMap() {
+        const mapContainer = document.getElementById('map');
+        if (!mapContainer) return;
+        
+        // Create map with light theme
+        this.map = L.map(mapContainer, {
+            center: [37.7749, -122.4194],
+            zoom: 18,
+            zoomControl: true,
+            attributionControl: false
+        });
+        
+        // Add light tile layer
+        // Google Maps satellite (may have usage limits)
+        L.tileLayer('https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', {
+            maxZoom: 20,
+            subdomains: ['mt1', 'mt2', 'mt3'],
+            attribution: '&copy; Google'
+        }).addTo(this.map);
+        
+        // Custom drone icon (blue)
+        const droneIcon = L.divIcon({
+            className: 'custom-drone-icon',
+            html: `<div style="
+                width: 24px;
+                height: 24px;
+                background: #0078c8;
+                border-radius: 50%;
+                border: 2px solid white;
+                box-shadow: 0 2px 8px rgba(0, 120, 200, 0.4);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-size: 12px;
+            "></div>`,
+            iconSize: [24, 24],
+            iconAnchor: [12, 12]
+        });
+        
+        // Add drone marker
+        this.marker = L.marker([37.7749, -122.4194], {
+            icon: droneIcon,
+            zIndexOffset: 1000
+        }).addTo(this.map);
+        
+        // Home icon (green)
+        const homeIcon = L.divIcon({
+            className: 'custom-home-icon',
+            html: `<div style="
+                width: 20px;
+                height: 20px;
+                background: #00b85c;
+                border-radius: 50%;
+                border: 2px solid white;
+                box-shadow: 0 2px 8px rgba(0, 184, 92, 0.4);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-size: 10px;
+            ">🏠</div>`,
+            iconSize: [20, 20],
+            iconAnchor: [10, 10]
+        });
+        
+        this.homeMarker = L.marker([37.7700, -122.4200], {
+            icon: homeIcon
+        }).addTo(this.map);
+        
+        // Station icon (orange)
+        const stationIcon = L.divIcon({
+            className: 'custom-station-icon',
+            html: `<div style="
+                width: 20px;
+                height: 20px;
+                background: #e67e00;
+                border-radius: 50%;
+                border: 2px solid white;
+                box-shadow: 0 2px 8px rgba(230, 126, 0, 0.4);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-size: 10px;
+            ">⚡</div>`,
+            iconSize: [20, 20],
+            iconAnchor: [10, 10]
+        });
+        
+        this.stationMarker = L.marker([37.7710, -122.4190], {
+            icon: stationIcon
+        }).addTo(this.map);
+        
+        // Trail polyline
+        this.trailPolyline = L.polyline([], {
+            color: '#0078c8',
+            weight: 2,
+            opacity: 0.6,
+            dashArray: '5, 5'
+        }).addTo(this.map);
+        
+        // Handle resize
+        setTimeout(() => {
+            this.map.invalidateSize();
+        }, 100);
+    }
+    
+    /**
+     * Start time counter for last update
+     */
+    startTimeCounter() {
+        setInterval(() => {
+            const lastUpdate = this.telemetry.data.communication.lastUpdate;
+            if (lastUpdate) {
+                const seconds = Math.floor((Date.now() - lastUpdate) / 1000);
+                this.elements.lastUpdateTime.textContent = `${seconds}s ago`;
+            }
+        }, 1000);
+    }
+    
+    /**
+     * Render telemetry data
+     */
+    render(data) {
+        this.renderTopBar(data);
+        this.renderMap(data);
+        this.renderNavigation(data);
+        this.renderAttitude(data);
+        this.renderGPS(data);
+        this.renderBattery(data);
+        this.renderCharging(data);
+        this.renderCommunication(data);
+        this.renderAlerts(data);
+    }
+    
+    /**
+     * Render top bar
+     */
+    renderTopBar(data) {
+        // Drone ID
+        this.elements.droneId.textContent = data.droneId || 'Drone-001';
+        
+        // Connection Status
+        const connBadge = this.elements.connBadge;
+        const isConnected = data.connectionStatus === 'Connected';
+        connBadge.className = `badge ${isConnected ? 'badge-green' : 'badge-red'}`;
+        connBadge.innerHTML = `<span class="dot ${isConnected ? 'pulse' : ''}"></span> ${data.connectionStatus || 'Disconnected'}`;
+        
+        // Armed Status
+        const armedBadge = this.elements.armedBadge;
+        const isArmed = data.armed || false;
+        armedBadge.className = `badge ${isArmed ? 'badge-red' : 'badge-green'}`;
+        armedBadge.innerHTML = `<i class="ti ti-power"></i> ${isArmed ? 'Armed' : 'Disarmed'}`;
+        
+        // Flight Mode
+        this.elements.modeBadge.textContent = data.flightMode || 'Stabilize';
+        this.elements.modeBadge.className = 'badge badge-blue';
+        
+        // Mission Status
+        const missionBadge = this.elements.missionBadge;
+        const missionStatus = data.missionStatus || 'Idle';
+        missionBadge.textContent = missionStatus;
+        const missionColors = {
+            'Idle': 'badge-gray',
+            'Taking Off': 'badge-blue',
+            'En Route': 'badge-amber',
+            'Landing': 'badge-amber',
+            'Charging': 'badge-green'
+        };
+        missionBadge.className = `badge ${missionColors[missionStatus] || 'badge-gray'}`;
+    }
+    
+    /**
+     * Render map
+     */
+    renderMap(data) {
+        const pos = data.position;
+        if (!pos || !pos.lat || !pos.lng) return;
+        
+        // Update marker position
+        this.marker.setLatLng([pos.lat, pos.lng]);
+        
+        // Center map on drone
+        this.map.setView([pos.lat, pos.lng], this.map.getZoom());
+        
+        // Update trail
+        this.trail.push([pos.lat, pos.lng]);
+        if (this.trail.length > 100) {
+            this.trail = this.trail.slice(-100);
+        }
+        this.trailPolyline.setLatLngs(this.trail);
+    }
+    
+    /**
+     * Render navigation metrics
+     */
+    renderNavigation(data) {
+        this.elements.altitude.textContent = (data.position.alt || 0).toFixed(1);
+        this.elements.groundSpeed.textContent = (data.navigation.groundSpeed || 0).toFixed(1);
+        this.elements.heading.textContent = (data.position.heading || 0).toFixed(0);
+        this.elements.distanceHome.textContent = (data.navigation.distanceFromHome || 0).toFixed(0);
+    }
+    
+    /**
+     * Render attitude
+     */
+    renderAttitude(data) {
+        const roll = data.attitude.roll || 0;
+        const pitch = data.attitude.pitch || 0;
+        const yaw = data.attitude.yaw || 0;
+        
+        this.elements.roll.textContent = `${roll.toFixed(1)}°`;
+        this.elements.pitch.textContent = `${pitch.toFixed(1)}°`;
+        this.elements.yaw.textContent = `${yaw.toFixed(1)}°`;
+        
+        // Color coding for extreme angles
+        this.elements.roll.className = `attitude-val ${Math.abs(roll) > 45 ? 'danger' : Math.abs(roll) > 30 ? 'warning' : ''}`;
+        this.elements.pitch.className = `attitude-val ${Math.abs(pitch) > 45 ? 'danger' : Math.abs(pitch) > 30 ? 'warning' : ''}`;
+    }
+    
+    /**
+     * Render GPS health
+     */
+    renderGPS(data) {
+        const gps = data.gps;
+        this.elements.gpsSats.textContent = gps.satellites || 0;
+        this.elements.gpsHdop.textContent = (gps.hdop || 0).toFixed(2);
+        
+        const fixType = gps.fixType || 'No Fix';
+        this.elements.gpsFixBadge.textContent = fixType;
+        const fixColors = {
+            '3D Fix': 'badge-green',
+            '2D Fix': 'badge-amber',
+            'No Fix': 'badge-red'
+        };
+        this.elements.gpsFixBadge.className = `badge ${fixColors[fixType] || 'badge-gray'}`;
+    }
+    
+    /**
+     * Render battery
+     */
+    renderBattery(data) {
+        const battery = data.battery;
+        const percent = battery.percent || 0;
+        
+        this.elements.batteryPercent.textContent = `${percent}%`;
+        this.elements.batteryBar.style.width = `${percent}%`;
+        
+        // Color coding
+        this.elements.batteryBar.className = 'batt-bar';
+        if (percent < 20) {
+            this.elements.batteryBar.classList.add('danger');
+        } else if (percent < 40) {
+            this.elements.batteryBar.classList.add('warning');
+        }
+        
+        // Health
+        const health = percent > 80 ? 'Excellent' : percent > 40 ? 'Healthy' : 'Critical';
+        this.elements.batteryHealth.textContent = health;
+        this.elements.batteryHealth.className = `badge battery-health ${percent > 40 ? 'badge-green' : 'badge-red'}`;
+        
+        this.elements.batteryVoltage.textContent = (battery.voltage || 0).toFixed(1);
+        this.elements.batteryCurrent.textContent = (battery.current || 0).toFixed(1);
+        this.elements.batteryCapacity.textContent = (battery.capacity || 0).toLocaleString();
+        this.elements.flightTimeLeft.textContent = (battery.timeLeft || 0).toFixed(0);
+    }
+    
+    /**
+     * Render charging
+     */
+    renderCharging(data) {
+        const charging = data.charging;
+        
+        // Docking status
+        const isDocked = charging.docked || false;
+        this.elements.dockingStatus.textContent = isDocked ? 'Docked' : 'Undocked';
+        this.elements.dockingStatus.className = `badge ${isDocked ? 'badge-green' : 'badge-gray'}`;
+        
+        // Charging status
+        const status = charging.status || 'Standby';
+        this.elements.chargingStatus.textContent = status;
+        const statusColors = {
+            'Charging': 'badge-green',
+            'Completed': 'badge-blue',
+            'Fault': 'badge-red',
+            'Standby': 'badge-amber'
+        };
+        this.elements.chargingStatus.className = `badge ${statusColors[status] || 'badge-gray'}`;
+        
+        // Progress
+        const progress = charging.progress || 0;
+        this.elements.chargeProgress.textContent = `${progress}%`;
+        this.elements.chargeProgressBar.style.width = `${progress}%`;
+        
+        this.elements.chargingVoltage.textContent = `${(charging.voltage || 0).toFixed(1)} V`;
+        this.elements.chargingCurrent.textContent = `${(charging.current || 0).toFixed(1)} A`;
+        this.elements.chargingEta.textContent = `~${(charging.eta || 0).toFixed(0)} min`;
+    }
+    
+    /**
+     * Render communication
+     */
+    renderCommunication(data) {
+        const comm = data.communication;
+        const rssi = comm.rssi || -100;
+        
+        // RSSI value
+        this.elements.rssiValue.textContent = `${rssi} dBm`;
+        
+        // RSSI bars
+        const bars = this.elements.rssiBars.querySelectorAll('span');
+        const rssiPercent = Math.max(0, Math.min(100, ((rssi + 100) / 70) * 100));
+        const activeBars = Math.floor((rssiPercent / 100) * 5);
+        
+        bars.forEach((bar, index) => {
+            bar.className = index < activeBars ? '' : 'inactive';
+        });
+        
+        // Link status
+        const linkStatus = comm.linkStatus || 'Disconnected';
+        this.elements.linkStatus.textContent = linkStatus;
+        this.elements.linkStatus.className = `badge ${linkStatus === 'Active' || linkStatus === 'Connected' ? 'badge-green' : 'badge-red'}`;
+        
+        // Packet loss
+        this.elements.packetLoss.textContent = `${(comm.packetLoss || 0).toFixed(1)}%`;
+    }
+    
+    /**
+     * Render alerts
+     */
+    renderAlerts(data) {
+        const alerts = data.alerts || [];
+        const grid = this.elements.alertsGrid;
+        
+        grid.innerHTML = '';
+        
+        if (alerts.length === 0) {
+            grid.innerHTML = `<div class="alert-item alert-ok">
+                <i class="ti ti-check"></i> All systems nominal
+            </div>`;
+            return;
+        }
+        
+        // Show up to 6 alerts
+        const visibleAlerts = alerts.slice(0, 6);
+        
+        for (const alert of visibleAlerts) {
+            const div = document.createElement('div');
+            const typeClass = {
+                'ok': 'alert-ok',
+                'warn': 'alert-warn',
+                'crit': 'alert-crit',
+                'info': 'alert-info'
+            }[alert.type] || 'alert-ok';
+            
+            div.className = `alert-item ${typeClass}`;
+            div.innerHTML = `<i class="ti ${alert.icon || 'ti-check'}"></i> ${alert.message}`;
+            grid.appendChild(div);
+        }
+    }
+}
+
+// ============================================================
+// INITIALIZE APPLICATION
+// ============================================================
+document.addEventListener('DOMContentLoaded', function() {
+    // Create telemetry manager
+    const telemetry = new TelemetryManager();
+    
+    // Create dashboard renderer
+    const dashboard = new DashboardRenderer(telemetry);
+    
+    // Try to connect to WebSocket (will fallback to simulation if not available)
+    setTimeout(() => {
+        telemetry.connectWebSocket();
+    }, 2000);
+    
+    // Expose for debugging
+    window.__telemetry = telemetry;
+    window.__dashboard = dashboard;
+    
+    console.log('🚁 Drone Dashboard initialized (Light Mode)');
+    console.log('ℹ️  Using simulated telemetry. Connect to WebSocket for real data.');
+});
