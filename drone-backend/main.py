@@ -8,14 +8,11 @@ import asyncio
 import random
 from drone_connection import DroneConnection
 
-# ============================================================
-# 1. CREATE FASTAPI APP
-# ============================================================
+
 app = FastAPI(title="Drone Telemetry API", version="1.0.0")
 
-# ============================================================
-# 2. ADD CORS MIDDLEWARE
-# ============================================================
+
+#CORS MIDDLEWARE
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -24,9 +21,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ============================================================
-# 3. INITIALIZE DRONE CONNECTION
-# ============================================================
+#INITIALIZE DRONE CONNECTION
+
 drone = DroneConnection()
 try:
     drone.connect('COM6')
@@ -35,10 +31,17 @@ except Exception as e:
     print(f" Could not connect to drone: {e}")
     print("ℹ Using mock data instead")
 
+# try:
+#     # 'udpin:0.0.0.0:14550' listens for incoming UDP telemetry packets on all local network adapters
+#     drone.connect("udpin:0.0.0.0:14550")
+#     print("listing for drone telemetry over wireless by UDP on the port 14550")
+# except Exception as e:
+#     print('could not bend to prot:{e}')
+#     print('using mock data istead')
 
-# ============================================================
-# 4. HELPER FUNCTION: Create static mock telemetry data
-# ============================================================
+
+#HELPER FUNCTION: Create static mock telemetry data
+
 def get_mock_telemetry():
     """Return static mock telemetry data for testing"""
     return {
@@ -92,9 +95,7 @@ def get_mock_telemetry():
     }
 
 
-# ============================================================
-# 5. HELPER FUNCTION: Create changing mock telemetry data
-# ============================================================
+#HELPER FUNCTION: Create changing mock telemetry data
 def get_changing_mock_data():
     """Return mock data with values that change over time"""
     
@@ -139,10 +140,7 @@ def get_changing_mock_data():
     
     return data
 
-
-# ============================================================
-# 6. HELPER FUNCTION: Get telemetry (drone or mock)
-# ============================================================
+#HELPER FUNCTION: Get telemetry (drone or mock)
 def get_telemetry_data():
     """Get telemetry from drone or fallback to mock"""
     
@@ -192,15 +190,11 @@ def get_telemetry_data():
     return get_changing_mock_data()
 
 
-# ============================================================
-# 7. INITIAL TELEMETRY STATE
-# ============================================================
+#INITIAL TELEMETRY STATE
 latest_telemetry = get_telemetry_data()
 
 
-# ============================================================
-# 8. BACKGROUND UPDATE LOOP
-# ============================================================
+#BACKGROUND UPDATE LOOP
 async def update_telemetry_loop():
     """Background task that updates telemetry every 2 seconds"""
     global latest_telemetry
@@ -210,15 +204,10 @@ async def update_telemetry_loop():
         await asyncio.sleep(2)
 
 
-# ============================================================
-# 9. WEBSOCKET CONNECTIONS STORE
-# ============================================================
+#WEBSOCKET CONNECTIONS STORE
 active_connections = []  # List of WebSocket connections
 
-
-# ============================================================
-# 10. WEBSOCKET ENDPOINT
-# ============================================================
+#WEBSOCKET ENDPOINT
 @app.websocket("/ws/telemetry")
 async def websocket_endpoint(websocket: WebSocket):
     """WebSocket endpoint for real-time telemetry"""
@@ -242,9 +231,7 @@ async def websocket_endpoint(websocket: WebSocket):
         print(f" Client disconnected. Total clients: {len(active_connections)}")
 
 
-# ============================================================
-# 11. REST API ENDPOINTS
-# ============================================================
+#REST API ENDPOINTS
 @app.get("/")
 async def root():
     return {
@@ -266,9 +253,7 @@ def get_mock_endpoint():
     return get_mock_telemetry()
 
 
-# ============================================================
-# 12. STARTUP EVENT - Start background tasks
-# ============================================================
+#STARTUP EVENT - Start background tasks
 @app.on_event("startup")
 async def startup_event():
     """Run when the server starts"""
@@ -276,9 +261,7 @@ async def startup_event():
     asyncio.create_task(update_telemetry_loop())
 
 
-# ============================================================
-# 13. RUN THE SERVER
-# ============================================================
+#RUN THE SERVER
 if __name__ == "__main__":
     uvicorn.run(
         "main:app",

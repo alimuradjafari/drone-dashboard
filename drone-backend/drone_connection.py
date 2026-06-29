@@ -23,8 +23,6 @@ class DroneConnection:
         self.last_update = None
         self.running = False
         self.thread = None
-        
-    # drone_connection.py - Update the connect method
 
     def connect(self, connection_string='COM6'):  # Changed default to COM3
         """
@@ -65,6 +63,51 @@ class DroneConnection:
         self.thread.start()
         print("📡 Started reading telemetry")
     
+    # #function that listen to the data that come from the network
+    # def _read_telemetry_loop(self):
+    #     """Background loop that reads MAVLink messages"""
+    #     last_packet_time = time.time()
+        
+    #     while self.running and self.is_connected:
+    #         try:
+    #             # Read next message (non-blocking, 1 second timeout)
+    #             msg = self.mav.recv_match(blocking=True, timeout=1.0)
+                
+    #             if msg is None:
+    #                 # If we haven't seen a wireless network packet in 5 seconds, flag a disconnect
+    #                 if time.time() - last_packet_time > 5.0:
+    #                     print("⚠️ Lost wireless connection to drone (Network Timeout)")
+    #                     self.is_connected = False
+    #                     break
+    #                 continue
+                
+    #             # Reset tracking timer upon packet arrival
+    #             last_packet_time = time.time()
+                
+    #             # Get message type
+    #             msg_type = msg.get_type()
+                
+    #             # Process different message types
+    #             if msg_type == 'GLOBAL_POSITION_INT':
+    #                 self._process_position(msg)
+    #             elif msg_type == 'BATTERY_STATUS':
+    #                 self._process_battery(msg)
+    #             elif msg_type == 'HEARTBEAT':
+    #                 self._process_heartbeat(msg)
+    #             elif msg_type == 'GPS_RAW_INT':
+    #                 self._process_gps(msg)
+    #             elif msg_type == 'ATTITUDE':
+    #                 self._process_attitude(msg)
+    #             elif msg_type == 'VFR_HUD':
+    #                 self._process_vfr(msg)
+                    
+    #             self.last_update = datetime.now()
+                
+    #         except Exception as e:
+    #             print(f"⚠️ Error reading MAVLink: {e}")
+    #             time.sleep(0.5)
+    
+    #function that works for the data wich come from the USB
     def _read_telemetry_loop(self):
         """Background loop that reads MAVLink messages"""
         while self.running and self.is_connected:
