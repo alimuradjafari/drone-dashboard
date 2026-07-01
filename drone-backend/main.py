@@ -1,18 +1,15 @@
-# main.py
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 import json
 from datetime import datetime
 import asyncio
-import random
+import time
 from drone_connection import DroneConnection
 
+app = FastAPI(title="Drone Telemetry API (Hybrid Setup)", version="1.0.0")
 
-app = FastAPI(title="Drone Telemetry API", version="1.0.0")
-
-
-#CORS MIDDLEWARE
+# CORS MIDDLEWARE
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -21,251 +18,168 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-#INITIALIZE DRONE CONNECTION
-
+# INITIALIZE DRONE CONNECTION INTERFACE
 drone = DroneConnection()
-try:
-    drone.connect('COM6')
-    print(" Connected to drone on COM6")
-except Exception as e:
-    print(f" Could not connect to drone: {e}")
-    print("ℹ Using mock data instead")
 
-# try:
-#     # 'udpin:0.0.0.0:14550' listens for incoming UDP telemetry packets on all local network adapters
-#     drone.connect("udpin:0.0.0.0:14550")
-#     print("listing for drone telemetry over wireless by UDP on the port 14550")
-# except Exception as e:
-#     print('could not bend to prot:{e}')
-#     print('using mock data istead')
+#Direct USB Serial connection
+CONNECTION_TARGET = 'COM6'
 
+#Wireless Hotspot connection
+# CONNECTION_TARGET = "udpin:0.0.0.0:14550"
 
-#HELPER FUNCTION: Create static mock telemetry data
+# GLOBAL TELEMETRY STORAGE INITIALIZATION
+latest_telemetry = {}
 
-def get_mock_telemetry():
-    """Return static mock telemetry data for testing"""
-    return {
-        "droneId": "Drone-001",
-        "connectionStatus": "Connected",
-        "armed": False,
-        "flightMode": "Stabilize",
-        "missionStatus": "Idle",
-        "position": {
-            "lat": 37.7749,
-            "lng": -122.4194,
-            "alt": 42.5,
-            "heading": 127.3
-        },
-        "navigation": {
-            "groundSpeed": 8.4,
-            "distanceFromHome": 312.0
-        },
-        "attitude": {
-            "roll": 2.1,
-            "pitch": -5.3,
-            "yaw": 127.3
-        },
-        "gps": {
-            "fixType": "3D Fix",
-            "satellites": 14,
-            "hdop": 0.82
-        },
-        "battery": {
-            "percent": 72,
-            "voltage": 22.4,
-            "current": 18.6,
-            "capacity": 3240,
-            "timeLeft": 11,
-            "health": "Healthy"
-        },
-        "charging": {
-            "docked": False,
-            "status": "Standby",
-            "progress": 62.0,
-            "voltage": 24.6,
-            "current": 4.2,
-            "eta": 18.0
-        },
-        "communication": {
-            "rssi": -68.0,
-            "linkStatus": "Active",
-            "packetLoss": 0.4,
-            "lastUpdate": datetime.now().isoformat()
-        }
+# STATIC TEMPLATE: Used when the drone is disconnected or when read threads fail
+DISCONNECTED_TELEMETRY_TEMPLATE = {
+    "droneId": "Drone-001",
+    "connectionStatus": "Disconnected",
+    "armed": False,
+    "flightMode": "Unknown",
+    "missionStatus": "Unknown",
+    "position": {"lat": 0.0, "lng": 0.0, "alt": 0.0, "heading": 0.0},
+    "navigation": {"groundSpeed": 0.0, "distanceFromHome": 0.0},
+    "attitude": {"roll": 0.0, "pitch": 0.0, "yaw": 0.0},
+    "gps": {"fixType": "No Fix", "satellites": 0, "hdop": 0.0},
+    "battery": {
+        "percent": 0, "voltage": 0.0, "current": 0.0,
+        "capacity": 0, "timeLeft": 0, "health": "Unknown"
+    },
+    "charging": {
+        "docked": False, "status": "Unknown", "progress": 0.0,
+        "voltage": 0.0, "current": 0.0, "eta": 0.0
+    },
+    "communication": {
+        "rssi": 0.0, "linkStatus": "Disconnected", "packetLoss": 0.0, "lastUpdate": ""
     }
+}
+
+# Ensure global state starts safe before tasks kick off
+latest_telemetry = DISCONNECTED_TELEMETRY_TEMPLATE.copy()
 
 
-#HELPER FUNCTION: Create changing mock telemetry data
-def get_changing_mock_data():
-    """Return mock data with values that change over time"""
-    
-    # Get the base mock data
-    data = get_mock_telemetry()
-    
-    # Change values to simulate real-time updates
-    # Position changes slightly (random walk)
-    data["position"]["lat"] += (random.random() - 0.5) * 0.0001
-    data["position"]["lng"] += (random.random() - 0.5) * 0.0001
-    data["position"]["alt"] = max(0, data["position"]["alt"] + (random.random() - 0.5) * 2)
-    
-    # Heading changes slightly
-    data["position"]["heading"] = (data["position"]["heading"] + (random.random() - 0.5) * 5) % 360
-    
-    # Battery slowly decreases (but never below 5%)
-    current_battery = data["battery"]["percent"]
-    data["battery"]["percent"] = max(5, current_battery - random.random() * 0.5)
-    data["battery"]["percent"] = round(data["battery"]["percent"], 1)
-    
-    # Update voltage based on battery level
-    data["battery"]["voltage"] = round(22.4 - (72 - data["battery"]["percent"]) * 0.05, 1)
-    
-    # Update flight time based on battery
-    data["battery"]["timeLeft"] = round(data["battery"]["percent"] * 0.15, 0)
-    
-    # Update battery health
-    if data["battery"]["percent"] > 40:
-        data["battery"]["health"] = "Healthy"
-    elif data["battery"]["percent"] > 20:
-        data["battery"]["health"] = "Low"
-    else:
-        data["battery"]["health"] = "Critical"
-    
-    # Update timestamp
-    data["communication"]["lastUpdate"] = datetime.now().isoformat()
-    
-    # Randomly change flight mode occasionally
-    if random.random() < 0.02:  # 2% chance
-        modes = ["Stabilize", "Loiter", "Auto", "RTL", "Guided"]
-        data["flightMode"] = random.choice(modes)
-    
-    return data
-
-#HELPER FUNCTION: Get telemetry (drone or mock)
 def get_telemetry_data():
-    """Get telemetry from drone or fallback to mock"""
-    
-    # If connected to drone, use real data
+    """Get live data from drone. If drone is offline, return explicit disconnected state."""
+    now = time.time()
+    thread_heartbeat = getattr(drone, 'last_heartbeat_time', 0)
+    time_since_last_heartbeat = now - thread_heartbeat
+
+    # Watchdog Check
+    if time_since_last_heartbeat > 4.0 and drone.is_connected_to_drone():
+        print(f" WATCHDOG TRIGGERED: Lost heartbeat connection for {time_since_last_heartbeat:.1f}s. Forcing offline state.")
+        drone.is_connected = False  
+
     if drone.is_connected_to_drone():
-        telemetry = drone.get_telemetry()
-        
-        # Format to match our dashboard structure
-        return {
-            "droneId": "Drone-001",
-            "connectionStatus": "Connected",
-            "armed": telemetry["status"]["armed"],
-            "flightMode": telemetry["status"]["mode"],
-            "missionStatus": "En Route" if telemetry["status"]["armed"] else "Idle",
-            "position": telemetry["position"],
-            "navigation": {
-                "groundSpeed": telemetry["navigation"]["groundSpeed"],
-                "distanceFromHome": 312.0  # Not available from MAVLink
-            },
-            "attitude": telemetry["attitude"],
-            "gps": telemetry["gps"],
-            "battery": {
-                "percent": telemetry["battery"]["percent"],
-                "voltage": telemetry["battery"]["voltage"],
-                "current": telemetry["battery"]["current"],
-                "capacity": 5200,  # Default
-                "timeLeft": 25,     # Calculate from battery
-                "health": "Healthy" if telemetry["battery"]["percent"] > 20 else "Critical"
-            },
-            "charging": {
-                "docked": False,
-                "status": "Not Charging",
-                "progress": 0,
-                "voltage": 0,
-                "current": 0,
-                "eta": 0
-            },
-            "communication": {
-                "rssi": -45,  # Not available from MAVLink
-                "linkStatus": "Connected",
-                "packetLoss": 0.2,
-                "lastUpdate": datetime.now().isoformat()
+        try:
+            telemetry = drone.get_telemetry()
+            
+            # Base logic for RSSI simulation depending on interface type
+            is_udp = "udpin" in CONNECTION_TARGET
+            rssi_value = -55 if is_udp else -45
+            
+            return {
+                "droneId": "Drone-001",
+                "connectionStatus": "Connected",
+                "armed": telemetry["status"]["armed"],
+                "flightMode": telemetry["status"]["mode"],
+                "missionStatus": "En Route" if telemetry["status"]["armed"] else "Idle",
+                "position": telemetry["position"],
+                "navigation": {
+                    "groundSpeed": telemetry["navigation"]["groundSpeed"],
+                    "distanceFromHome": 312.0 
+                },
+                "attitude": telemetry["attitude"],
+                "gps": telemetry["gps"],
+                "battery": {
+                    "percent": telemetry["battery"]["percent"],
+                    "voltage": telemetry["battery"]["voltage"],
+                    "current": telemetry["battery"]["current"],
+                    "capacity": 5200,
+                    "timeLeft": 25,
+                    "health": "Healthy" if telemetry["battery"]["percent"] > 20 else "Critical"
+                },
+                "charging": {
+                    "docked": False, "status": "Not Charging", "progress": 0,
+                    "voltage": 0, "current": 0, "eta": 0
+                },
+                "communication": {
+                    "rssi": rssi_value,
+                    "linkStatus": "Connected",
+                    "packetLoss": 0.2 if not is_udp else 0.5,
+                    "lastUpdate": datetime.now().isoformat()
+                }
             }
-        }
-    
-    # Fallback to changing mock data
-    return get_changing_mock_data()
+        except Exception as e:
+            print(f"Error extracting telemetry dictionary: {e}")
+            
+    disconnected_data = DISCONNECTED_TELEMETRY_TEMPLATE.copy()
+    disconnected_data["communication"]["lastUpdate"] = datetime.now().isoformat()
+    return disconnected_data
 
 
-#INITIAL TELEMETRY STATE
-latest_telemetry = get_telemetry_data()
+# BACKGROUND RECONNECTION TASK
+async def reconnect_drone_task():
+    """Continuously monitors connection state and executes hot-reconnect attempts if target drops"""
+    print(f" Hardware monitoring loop active. Target profile: {CONNECTION_TARGET}")
+    while True:
+        if not drone.is_connected_to_drone():
+            print(f"🔌 Attempting connection to target: {CONNECTION_TARGET}...")
+            try:
+                drone.connect(CONNECTION_TARGET)
+                print(" Successfully established connection handle!")
+            except Exception as e:
+                print(f" Connection attempt failed: {e}. Retrying in 3 seconds...")
+        
+        # Check link status profile every 3 seconds
+        await asyncio.sleep(3)
 
 
-#BACKGROUND UPDATE LOOP
+# BACKGROUND UPDATE LOOP
 async def update_telemetry_loop():
-    """Background task that updates telemetry every 2 seconds"""
+    """Background task that updates telemetry state every 1 second"""
     global latest_telemetry
-    print(" Started telemetry update loop (every 2 seconds)")
     while True:
         latest_telemetry = get_telemetry_data()
-        await asyncio.sleep(2)
+        await asyncio.sleep(1)
 
 
-#WEBSOCKET CONNECTIONS STORE
-active_connections = []  # List of WebSocket connections
+# WEBSOCKET CONNECTIONS STORE
+active_connections = []
 
-#WEBSOCKET ENDPOINT
 @app.websocket("/ws/telemetry")
 async def websocket_endpoint(websocket: WebSocket):
-    """WebSocket endpoint for real-time telemetry"""
-    
     await websocket.accept()
     active_connections.append(websocket)
-    print(f" Client connected. Total clients: {len(active_connections)}")
+    print(f" Client connected to UI pipe. Total clients: {len(active_connections)}")
     
     try:
-        # Send initial data immediately (from shared state)
         await websocket.send_text(json.dumps(latest_telemetry))
-        
-        # Keep connection alive and send updates
         while True:
-            await asyncio.sleep(2)
-            # Send the latest telemetry from shared state
+            await asyncio.sleep(1)
             await websocket.send_text(json.dumps(latest_telemetry))
             
     except WebSocketDisconnect:
         active_connections.remove(websocket)
-        print(f" Client disconnected. Total clients: {len(active_connections)}")
+        print(f" Client disconnected from UI pipe. Total clients: {len(active_connections)}")
 
 
-#REST API ENDPOINTS
 @app.get("/")
 async def root():
-    return {
-        "status": "online",
-        "message": "Drone Telemetry API is running",
-        "version": "1.0.0"
-    }
+    return {"status": "online", "message": "Drone Telemetry API is running"}
 
 
 @app.get("/api/telemetry/latest")
 async def get_latest_telemetry():
-    """Get the latest telemetry data"""
     return latest_telemetry
 
 
-@app.get("/api/telemetry/mock")
-def get_mock_endpoint():
-    """Get mock telemetry data (for testing)"""
-    return get_mock_telemetry()
-
-
-#STARTUP EVENT - Start background tasks
+# STARTUP EVENT - Register background tasks cleanly
 @app.on_event("startup")
 async def startup_event():
-    """Run when the server starts"""
-    print(" Starting background telemetry update loop...")
+    print(" Initializing backend worker threads...")
+    asyncio.create_task(reconnect_drone_task())
     asyncio.create_task(update_telemetry_loop())
 
 
-#RUN THE SERVER
 if __name__ == "__main__":
-    uvicorn.run(
-        "main:app",
-        host="0.0.0.0",
-        port=8000,
-        reload=True
-    )
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
