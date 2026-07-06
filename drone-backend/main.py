@@ -7,9 +7,9 @@ import asyncio
 import time
 from drone_connection import DroneConnection
 
-app = FastAPI(title="Drone Telemetry API (Hybrid Setup)", version="1.0.0")
+app = FastAPI(title="Drone Telemetry API (Hybrid Setup)")
 
-# CORS MIDDLEWARE
+#CORS MIDDLEWARE
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
