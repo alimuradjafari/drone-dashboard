@@ -5,22 +5,17 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Drone Charging Station Dashboard</title>
     
-    <!-- Leaflet CSS for maps -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     
-    <!-- Tabler Icons -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.47.0/dist/tabler-icons.min.css" />
     
-    <!-- Google Fonts -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
     
-    <!-- Custom CSS -->
     <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
 
 <div class="dash">
-    <!-- ===== TOP BAR ===== -->
     <div class="topbar">
         <div class="topbar-left">
             <span class="drone-id">
@@ -44,11 +39,8 @@
         </div>
     </div>
 
-    <!-- ===== MAIN ===== -->
     <div class="main">
-        <!-- LEFT COLUMN -->
         <div class="col">
-            <!-- Position & Navigation -->
             <div class="card">
                 <div class="card-title">
                     <i class="ti ti-navigation"></i> Position & navigation
@@ -76,7 +68,6 @@
                 </div>
             </div>
 
-            <!-- Attitude -->
             <div class="card">
                 <div class="card-title">
                     <i class="ti ti-rotate"></i> Attitude / orientation
@@ -97,7 +88,6 @@
                 </div>
             </div>
 
-            <!-- GPS Health -->
             <div class="card">
                 <div class="card-title">
                     <i class="ti ti-satellite"></i> GPS health
@@ -117,9 +107,7 @@
             </div>
         </div>
 
-        <!-- RIGHT COLUMN -->
         <div class="col">
-            <!-- Battery -->
             <div class="card">
                 <div class="card-title">
                     <i class="ti ti-battery"></i> Battery & power
@@ -151,7 +139,6 @@
                 </div>
             </div>
 
-            <!-- Charging Station -->
             <div class="card">
                 <div class="card-title">
                     <i class="ti ti-plug"></i> Charging station
@@ -185,7 +172,6 @@
                 </div>
             </div>
 
-            <!-- Communication -->
             <div class="card">
                 <div class="card-title">
                     <i class="ti ti-wifi"></i> Communication
@@ -214,7 +200,6 @@
             </div>
         </div>
 
-        <!-- Alerts (Full Width) -->
         <div class="card section-full">
             <div class="card-title">
                 <i class="ti ti-bell"></i> Alerts & warnings
@@ -228,10 +213,8 @@
     </div>
 </div>
 
-<!-- ===== LEAFTET JS ===== -->
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
-<!-- ===== MAIN JAVASCRIPT ===== -->
 <script src="script.js"></script>
 
 </body>

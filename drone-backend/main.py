@@ -9,7 +9,7 @@ from drone_connection import DroneConnection
 
 app = FastAPI(title="Drone Telemetry API (Hybrid Setup)")
 
-#CORS MIDDLEWARE
+# CORS MIDDLEWARE
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -21,10 +21,10 @@ app.add_middleware(
 # INITIALIZE DRONE CONNECTION INTERFACE
 drone = DroneConnection()
 
-#Direct USB Serial connection
-CONNECTION_TARGET = 'COM6'
+# Direct USB Serial connection
+CONNECTION_TARGET = 'COM9'
 
-#Wireless Hotspot connection
+# Wireless Hotspot connection (Uncomment when transferring to target landing station)
 # CONNECTION_TARGET = "udpin:0.0.0.0:14550"
 
 # GLOBAL TELEMETRY STORAGE INITIALIZATION
@@ -66,7 +66,7 @@ def get_telemetry_data():
 
     # Watchdog Check
     if time_since_last_heartbeat > 4.0 and drone.is_connected_to_drone():
-        print(f" WATCHDOG TRIGGERED: Lost heartbeat connection for {time_since_last_heartbeat:.1f}s. Forcing offline state.")
+        print(f"⚠️ WATCHDOG TRIGGERED: Lost heartbeat connection for {time_since_last_heartbeat:.1f}s. Forcing offline state.")
         drone.is_connected = False  
 
     if drone.is_connected_to_drone():
@@ -86,7 +86,7 @@ def get_telemetry_data():
                 "position": telemetry["position"],
                 "navigation": {
                     "groundSpeed": telemetry["navigation"]["groundSpeed"],
-                    "distanceFromHome": 312.0 
+                    "distanceFromHome": 0.0 
                 },
                 "attitude": telemetry["attitude"],
                 "gps": telemetry["gps"],
@@ -94,8 +94,8 @@ def get_telemetry_data():
                     "percent": telemetry["battery"]["percent"],
                     "voltage": telemetry["battery"]["voltage"],
                     "current": telemetry["battery"]["current"],
-                    "capacity": 5200,
-                    "timeLeft": 25,
+                    "capacity": 0,
+                    "timeLeft": 0,
                     "health": "Healthy" if telemetry["battery"]["percent"] > 20 else "Critical"
                 },
                 "charging": {
@@ -110,7 +110,7 @@ def get_telemetry_data():
                 }
             }
         except Exception as e:
-            print(f"Error extracting telemetry dictionary: {e}")
+            print(f"❌ Error extracting telemetry dictionary: {e}")
             
     disconnected_data = DISCONNECTED_TELEMETRY_TEMPLATE.copy()
     disconnected_data["communication"]["lastUpdate"] = datetime.now().isoformat()
@@ -120,27 +120,28 @@ def get_telemetry_data():
 # BACKGROUND RECONNECTION TASK
 async def reconnect_drone_task():
     """Continuously monitors connection state and executes hot-reconnect attempts if target drops"""
-    print(f" Hardware monitoring loop active. Target profile: {CONNECTION_TARGET}")
+    print(f"🔌 Hardware monitoring loop active. Target profile: {CONNECTION_TARGET}")
     while True:
         if not drone.is_connected_to_drone():
-            print(f"🔌 Attempting connection to target: {CONNECTION_TARGET}...")
+            print(f"⚡ Connection broken/inactive. Instantiating hook to: {CONNECTION_TARGET}...")
             try:
                 drone.connect(CONNECTION_TARGET)
-                print(" Successfully established connection handle!")
+                print("✅ Successfully established connection handle!")
             except Exception as e:
-                print(f" Connection attempt failed: {e}. Retrying in 3 seconds...")
+                print(f"❌ Connection attempt failed: {e}. Retrying in 3 seconds...")
         
         # Check link status profile every 3 seconds
         await asyncio.sleep(3)
 
 
-# BACKGROUND UPDATE LOOP
+# BACKGROUND UPDATE LOOP (Throttled to 20Hz for Real-time Hardware Extraction)
 async def update_telemetry_loop():
-    """Background task that updates telemetry state every 1 second"""
+    """Background task that pulls telemetry updates from the drone instance at 20Hz"""
     global latest_telemetry
     while True:
         latest_telemetry = get_telemetry_data()
-        await asyncio.sleep(1)
+        # Sleep for 50 milliseconds to capture quick hand movements instantly
+        await asyncio.sleep(0.05)
 
 
 # WEBSOCKET CONNECTIONS STORE
@@ -150,17 +151,19 @@ active_connections = []
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
     active_connections.append(websocket)
-    print(f" Client connected to UI pipe. Total clients: {len(active_connections)}")
+    print(f"🚀 Client connected to UI pipe. Total active dashboard clients: {len(active_connections)}")
     
     try:
+        # Send initial frame immediately on socket connection
         await websocket.send_text(json.dumps(latest_telemetry))
         while True:
-            await asyncio.sleep(1)
+            # Broadcast state down to script.js at 10Hz (every 100ms) for smooth UI renders
+            await asyncio.sleep(0.1)
             await websocket.send_text(json.dumps(latest_telemetry))
             
     except WebSocketDisconnect:
         active_connections.remove(websocket)
-        print(f" Client disconnected from UI pipe. Total clients: {len(active_connections)}")
+        print(f"🛑 Client disconnected from UI pipe. Total remaining clients: {len(active_connections)}")
 
 
 @app.get("/")
@@ -176,10 +179,11 @@ async def get_latest_telemetry():
 # STARTUP EVENT - Register background tasks cleanly
 @app.on_event("startup")
 async def startup_event():
-    print(" Initializing backend worker threads...")
+    print("⚙️ Initializing async background worker loops...")
     asyncio.create_task(reconnect_drone_task())
     asyncio.create_task(update_telemetry_loop())
 
 
 if __name__ == "__main__":
+    # Ensure hot-reload is active during lab configurations
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)

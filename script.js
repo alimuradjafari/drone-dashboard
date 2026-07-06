@@ -40,12 +40,6 @@ class TelemetryManager {
     /**
      * Start simulated telemetry updates (for testing without hardware)
      */
-    // script.js - Replace these methods in TelemetryManager class
-
-    /**
-     * Start simulated telemetry updates (for testing without hardware)
-     */
-    // this is for simulation (i can remove this when connected to the hardware, and remove the this.isSimulating,this.updateInterval) 
     startSimulation() {
         if (this.updateInterval) clearInterval(this.updateInterval);
         
@@ -70,7 +64,7 @@ class TelemetryManager {
             
             this.updateData({
                 position: { lat, lng, alt, heading },
-                navigation: { groundSpeed, distanceFromHome },
+                navigation: { groundSpeed, distanceHome },
                 battery: { percent: Math.round(batteryPercent) },
                 communication: { lastUpdate: Date.now() }
             });
@@ -88,35 +82,45 @@ class TelemetryManager {
             this.ws.onopen = () => {
                 console.log('✅ WebSocket connected successfully!');
                 this.isSimulating = false;
+                
+                // CRITICAL FIX: Kill the background simulation interval completely 
+                // to prevent deepMerge from erasing live backend fields.
+                if (this.updateInterval) {
+                    clearInterval(this.updateInterval);
+                    this.updateInterval = null;
+                }
+                
                 this.updateData({ 
                     connectionStatus: 'Connected',
                     communication: { linkStatus: 'Connected' }
                 });
-                // Show a success message
                 this.addAlert('Connected to telemetry server', 'ok');
             };
             
             this.ws.onmessage = (event) => {
                 try {
                     const data = JSON.parse(event.data);
-                    console.log('📡 Received telemetry:', data);
                     
-                    // Update the data
+                    // Update data wrapper dynamically while respecting backend flags
                     this.updateData({
                         ...data,
-                        connectionStatus: 'Connected',
+                        connectionStatus: data.connectionStatus || 'Disconnected',
                         communication: { 
                             ...data.communication,
                             lastUpdate: Date.now() 
                         }
                     });
                     
-                    // Check for low battery alert
-                    if (data.battery && data.battery.percent < 30) {
-                        this.addAlert(`Battery at ${data.battery.percent}% - Land soon!`, 'warn');
-                    }
-                    if (data.battery && data.battery.percent < 15) {
-                        this.addAlert(`CRITICAL: Battery at ${data.battery.percent}%!`, 'crit');
+                    // Trigger tracking alert filters if connected
+                    if (data.connectionStatus !== 'Disconnected') {
+                        if (data.battery && data.battery.percent < 30) {
+                            this.addAlert(`Battery at ${data.battery.percent}% - Land soon!`, 'warn');
+                        }
+                        if (data.battery && data.battery.percent < 15) {
+                            this.addAlert(`CRITICAL: Battery at ${data.battery.percent}%!`, 'crit');
+                        }
+                    } else {
+                        this.addAlert('Hardware communication link interrupted.', 'crit');
                     }
                     
                 } catch (error) {
@@ -132,7 +136,6 @@ class TelemetryManager {
                 });
                 this.addAlert('Lost connection to telemetry server', 'crit');
                 
-                // Fallback to simulation
                 this.isSimulating = true;
                 if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
                 this.reconnectTimer = setTimeout(() => {
@@ -184,6 +187,8 @@ class TelemetryManager {
      */
     addAlert(message, type = 'ok') {
         const alert = { type, icon: this.getAlertIcon(type), message };
+        // De-duplicate repetitive system notifications
+        if (this.data.alerts.length > 0 && this.data.alerts[0].message === message) return;
         this.data.alerts = [alert, ...this.data.alerts.slice(0, 9)];
         this.notifyListeners();
     }
@@ -327,7 +332,6 @@ class DashboardRenderer {
         const mapContainer = document.getElementById('map');
         if (!mapContainer) return;
         
-        // Create map with light theme
         this.map = L.map(mapContainer, {
             center: [37.7749, -122.4194],
             zoom: 18,
@@ -335,15 +339,12 @@ class DashboardRenderer {
             attributionControl: false
         });
         
-        // Add light tile layer
-        // Google Maps satellite (may have usage limits)
         L.tileLayer('https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', {
             maxZoom: 20,
             subdomains: ['mt1', 'mt2', 'mt3'],
             attribution: '&copy; Google'
         }).addTo(this.map);
         
-        // Custom drone icon (blue)
         const droneIcon = L.divIcon({
             className: 'custom-drone-icon',
             html: `<div style="
@@ -362,13 +363,11 @@ class DashboardRenderer {
             iconAnchor: [12, 12]
         });
         
-        // Add drone marker
         this.marker = L.marker([37.7749, -122.4194], {
             icon: droneIcon,
             zIndexOffset: 1000
         }).addTo(this.map);
         
-        // Home icon (green)
         const homeIcon = L.divIcon({
             className: 'custom-home-icon',
             html: `<div style="
@@ -391,7 +390,6 @@ class DashboardRenderer {
             icon: homeIcon
         }).addTo(this.map);
         
-        // Station icon (orange)
         const stationIcon = L.divIcon({
             className: 'custom-station-icon',
             html: `<div style="
@@ -414,7 +412,6 @@ class DashboardRenderer {
             icon: stationIcon
         }).addTo(this.map);
         
-        // Trail polyline
         this.trailPolyline = L.polyline([], {
             color: '#0078c8',
             weight: 2,
@@ -422,7 +419,6 @@ class DashboardRenderer {
             dashArray: '5, 5'
         }).addTo(this.map);
         
-        // Handle resize
         setTimeout(() => {
             this.map.invalidateSize();
         }, 100);
@@ -442,7 +438,7 @@ class DashboardRenderer {
     }
     
     /**
-     * Render telemetry data
+     * Render telemetry data wrappers
      */
     render(data) {
         this.renderTopBar(data);
@@ -457,99 +453,113 @@ class DashboardRenderer {
     }
     
     /**
-     * Render top bar
+     * Render top status bar elements
      */
     renderTopBar(data) {
-        // Drone ID
         this.elements.droneId.textContent = data.droneId || 'Drone-001';
         
-        // Connection Status
         const connBadge = this.elements.connBadge;
         const isConnected = data.connectionStatus === 'Connected';
         connBadge.className = `badge ${isConnected ? 'badge-green' : 'badge-red'}`;
-        connBadge.innerHTML = `<span class="dot ${isConnected ? 'pulse' : ''}"></span> ${data.connectionStatus || 'Disconnected'}`;
+        connBadge.innerHTML = `<span class="dot ${isConnected ? 'pulse' : ''}"></span> ${data.connectionStatus}`;
         
-        // Armed Status
         const armedBadge = this.elements.armedBadge;
-        const isArmed = data.armed || false;
+        const isArmed = isConnected ? (data.armed || false) : false;
         armedBadge.className = `badge ${isArmed ? 'badge-red' : 'badge-green'}`;
         armedBadge.innerHTML = `<i class="ti ti-power"></i> ${isArmed ? 'Armed' : 'Disarmed'}`;
         
-        // Flight Mode
-        this.elements.modeBadge.textContent = data.flightMode || 'Stabilize';
-        this.elements.modeBadge.className = 'badge badge-blue';
+        this.elements.modeBadge.textContent = isConnected ? (data.flightMode || 'Stabilize') : 'Offline';
+        this.elements.modeBadge.className = `badge ${isConnected ? 'badge-blue' : 'badge-gray'}`;
         
-        // Mission Status
         const missionBadge = this.elements.missionBadge;
-        const missionStatus = data.missionStatus || 'Idle';
+        const missionStatus = isConnected ? (data.missionStatus || 'Idle') : 'Unknown';
         missionBadge.textContent = missionStatus;
         const missionColors = {
             'Idle': 'badge-gray',
             'Taking Off': 'badge-blue',
             'En Route': 'badge-amber',
             'Landing': 'badge-amber',
-            'Charging': 'badge-green'
+            'Charging': 'badge-green',
+            'Unknown': 'badge-gray'
         };
         missionBadge.className = `badge ${missionColors[missionStatus] || 'badge-gray'}`;
     }
     
     /**
-     * Render map
+     * Render map smoothly without high-frequency layout thrashing
      */
     renderMap(data) {
         const pos = data.position;
-        if (!pos || !pos.lat || !pos.lng) return;
-        
-        // Update marker position
-        this.marker.setLatLng([pos.lat, pos.lng]);
-        
-        // Center map on drone
-        this.map.setView([pos.lat, pos.lng], this.map.getZoom());
-        
-        // Update trail
-        this.trail.push([pos.lat, pos.lng]);
-        if (this.trail.length > 100) {
-            this.trail = this.trail.slice(-100);
+        if (!pos || typeof pos.lat !== 'number' || typeof pos.lng !== 'number' || !this.map || !this.marker) return;
+        if (pos.lat === 0.0 && pos.lng === 0.0) return; // Prevent raw GPS lock jumps
+
+        try {
+            const targetLatLng = [pos.lat, pos.lng];
+            
+            // Move marker object instantly 
+            this.marker.setLatLng(targetLatLng);
+            
+            // Pan map view bounds only if drone travels outside the center focal buffer
+            const mapCenter = this.map.getCenter();
+            const distanceMoved = mapCenter.distanceTo(targetLatLng); // distance in meters
+            
+            if (distanceMoved > 15) { 
+                this.map.panTo(targetLatLng, { animate: true, duration: 0.2 });
+            }
+            
+            if (data.connectionStatus === 'Connected') {
+                if (this.trail.length === 0 || 
+                    this.trail[this.trail.length - 1][0] !== pos.lat || 
+                    this.trail[this.trail.length - 1][1] !== pos.lng) {
+                    
+                    this.trail.push(targetLatLng);
+                    if (this.trail.length > 100) this.trail = this.trail.slice(-100);
+                    if (this.trailPolyline) this.trailPolyline.setLatLngs(this.trail);
+                }
+            }
+        } catch(e) {
+            // Silently absorb minor runtime race conditions during high-speed hardware data packets
         }
-        this.trailPolyline.setLatLngs(this.trail);
     }
     
     /**
-     * Render navigation metrics
+     * Render navigation metrics securely
      */
     renderNavigation(data) {
-        this.elements.altitude.textContent = (data.position.alt || 0).toFixed(1);
-        this.elements.groundSpeed.textContent = (data.navigation.groundSpeed || 0).toFixed(1);
-        this.elements.heading.textContent = (data.position.heading || 0).toFixed(0);
-        this.elements.distanceHome.textContent = (data.navigation.distanceFromHome || 0).toFixed(0);
+        const isConnected = data.connectionStatus === 'Connected';
+        this.elements.altitude.textContent = isConnected ? (data.position.alt || 0).toFixed(1) : '0.0';
+        this.elements.groundSpeed.textContent = isConnected ? (data.navigation.groundSpeed || 0).toFixed(1) : '0.0';
+        this.elements.heading.textContent = isConnected ? (data.position.heading || 0).toFixed(0) : '0';
+        this.elements.distanceHome.textContent = isConnected ? (data.navigation.distanceFromHome || 0).toFixed(0) : '0';
     }
     
     /**
-     * Render attitude
+     * Render attitude mechanics
      */
     renderAttitude(data) {
-        const roll = data.attitude.roll || 0;
-        const pitch = data.attitude.pitch || 0;
-        const yaw = data.attitude.yaw || 0;
+        const isConnected = data.connectionStatus === 'Connected';
+        const roll = isConnected ? (data.attitude.roll || 0) : 0;
+        const pitch = isConnected ? (data.attitude.pitch || 0) : 0;
+        const yaw = isConnected ? (data.attitude.yaw || 0) : 0;
         
         this.elements.roll.textContent = `${roll.toFixed(1)}°`;
         this.elements.pitch.textContent = `${pitch.toFixed(1)}°`;
         this.elements.yaw.textContent = `${yaw.toFixed(1)}°`;
         
-        // Color coding for extreme angles
         this.elements.roll.className = `attitude-val ${Math.abs(roll) > 45 ? 'danger' : Math.abs(roll) > 30 ? 'warning' : ''}`;
         this.elements.pitch.className = `attitude-val ${Math.abs(pitch) > 45 ? 'danger' : Math.abs(pitch) > 30 ? 'warning' : ''}`;
     }
     
     /**
-     * Render GPS health
+     * Render GPS health indexes
      */
     renderGPS(data) {
         const gps = data.gps;
-        this.elements.gpsSats.textContent = gps.satellites || 0;
-        this.elements.gpsHdop.textContent = (gps.hdop || 0).toFixed(2);
+        const isConnected = data.connectionStatus === 'Connected';
+        this.elements.gpsSats.textContent = isConnected ? (gps.satellites || 0) : 0;
+        this.elements.gpsHdop.textContent = isConnected ? (gps.hdop || 0).toFixed(2) : '0.00';
         
-        const fixType = gps.fixType || 'No Fix';
+        const fixType = isConnected ? (gps.fixType || 'No Fix') : 'No Fix';
         this.elements.gpsFixBadge.textContent = fixType;
         const fixColors = {
             '3D Fix': 'badge-green',
@@ -560,46 +570,89 @@ class DashboardRenderer {
     }
     
     /**
-     * Render battery
+     * Render battery metrics securely with color warning indicators
      */
     renderBattery(data) {
-        const battery = data.battery;
-        const percent = battery.percent || 0;
+        const batt = data.battery;
+        const isConnected = data.connectionStatus === 'Connected';
         
-        this.elements.batteryPercent.textContent = `${percent}%`;
-        this.elements.batteryBar.style.width = `${percent}%`;
+        // Extract and normalize percentage value safely
+        const percent = (isConnected && batt && typeof batt.percent === 'number') ? Math.max(0, Math.min(100, batt.percent)) : 0;
         
-        // Color coding
-        this.elements.batteryBar.className = 'batt-bar';
-        if (percent < 20) {
-            this.elements.batteryBar.classList.add('danger');
-        } else if (percent < 40) {
-            this.elements.batteryBar.classList.add('warning');
+        // Update Battery Percentage Text & Progress Bar Width
+        if (this.elements.batteryPercent) {
+            this.elements.batteryPercent.textContent = isConnected ? `${Math.round(percent)}%` : '0%';
         }
         
-        // Health
-        const health = percent > 80 ? 'Excellent' : percent > 40 ? 'Healthy' : 'Critical';
-        this.elements.batteryHealth.textContent = health;
-        this.elements.batteryHealth.className = `badge battery-health ${percent > 40 ? 'badge-green' : 'badge-red'}`;
+        if (this.elements.batteryBar) {
+            this.elements.batteryBar.style.width = `${percent}%`;
+            this.elements.batteryBar.className = 'batt-bar';
+            
+            if (percent < 20) {
+                this.elements.batteryBar.classList.add('danger');
+            } else if (percent < 40) {
+                this.elements.batteryBar.classList.add('warning');
+            }
+        }
         
-        this.elements.batteryVoltage.textContent = (battery.voltage || 0).toFixed(1);
-        this.elements.batteryCurrent.textContent = (battery.current || 0).toFixed(1);
-        this.elements.batteryCapacity.textContent = (battery.capacity || 0).toLocaleString();
-        this.elements.flightTimeLeft.textContent = (battery.timeLeft || 0).toFixed(0);
+        // Update Battery Health Badge
+        if (this.elements.batteryHealth) {
+            let healthText = 'Unknown';
+            let healthClass = 'badge badge-gray';
+            
+            if (isConnected) {
+                if (percent > 75) {
+                    healthText = 'Excellent';
+                    healthClass = 'badge badge-green';
+                } else if (percent > 30) {
+                    healthText = 'Healthy';
+                    healthClass = 'badge badge-green';
+                } else {
+                    healthText = 'Low Battery';
+                    healthClass = 'badge badge-red';
+                }
+            }
+            
+            this.elements.batteryHealth.textContent = healthText;
+            this.elements.batteryHealth.className = healthClass;
+        }
+        
+        // Display Sub-metrics securely against parsing failure drops
+        if (this.elements.batteryVoltage) {
+            this.elements.batteryVoltage.textContent = (isConnected && typeof batt?.voltage === 'number') 
+                ? batt.voltage.toFixed(2) 
+                : '0.00';
+        }
+        
+        if (this.elements.batteryCurrent) {
+            this.elements.batteryCurrent.textContent = (isConnected && typeof batt?.current === 'number') 
+                ? batt.current.toFixed(1) 
+                : '0.0';
+        }
+        
+        if (this.elements.batteryCapacity) {
+            this.elements.batteryCapacity.textContent = (isConnected && typeof batt?.capacity === 'number') 
+                ? batt.capacity.toLocaleString() 
+                : '0';
+        }
+        
+        if (this.elements.flightTimeLeft) {
+            this.elements.flightTimeLeft.textContent = (isConnected && typeof batt?.timeLeft === 'number') 
+                ? Math.max(0, batt.timeLeft).toFixed(0) 
+                : '0';
+        }
     }
     
     /**
-     * Render charging
+     * Render landing station telemetry structures
      */
     renderCharging(data) {
         const charging = data.charging;
-        
-        // Docking status
         const isDocked = charging.docked || false;
+        
         this.elements.dockingStatus.textContent = isDocked ? 'Docked' : 'Undocked';
         this.elements.dockingStatus.className = `badge ${isDocked ? 'badge-green' : 'badge-gray'}`;
         
-        // Charging status
         const status = charging.status || 'Standby';
         this.elements.chargingStatus.textContent = status;
         const statusColors = {
@@ -610,7 +663,6 @@ class DashboardRenderer {
         };
         this.elements.chargingStatus.className = `badge ${statusColors[status] || 'badge-gray'}`;
         
-        // Progress
         const progress = charging.progress || 0;
         this.elements.chargeProgress.textContent = `${progress}%`;
         this.elements.chargeProgressBar.style.width = `${progress}%`;
@@ -621,87 +673,83 @@ class DashboardRenderer {
     }
     
     /**
-     * Render communication
+     * Render radio hardware communication nodes
      */
     renderCommunication(data) {
         const comm = data.communication;
-        const rssi = comm.rssi || -100;
+        const isConnected = data.connectionStatus === 'Connected';
+        const rssi = isConnected ? (comm.rssi || -100) : -100;
         
-        // RSSI value
         this.elements.rssiValue.textContent = `${rssi} dBm`;
         
-        // RSSI bars
         const bars = this.elements.rssiBars.querySelectorAll('span');
         const rssiPercent = Math.max(0, Math.min(100, ((rssi + 100) / 70) * 100));
-        const activeBars = Math.floor((rssiPercent / 100) * 5);
+        const activeBars = isConnected ? Math.floor((rssiPercent / 100) * 5) : 0;
         
         bars.forEach((bar, index) => {
             bar.className = index < activeBars ? '' : 'inactive';
         });
         
-        // Link status
-        const linkStatus = comm.linkStatus || 'Disconnected';
+        const linkStatus = isConnected ? 'Active' : 'Disconnected';
         this.elements.linkStatus.textContent = linkStatus;
-        this.elements.linkStatus.className = `badge ${linkStatus === 'Active' || linkStatus === 'Connected' ? 'badge-green' : 'badge-red'}`;
-        
-        // Packet loss
-        this.elements.packetLoss.textContent = `${(comm.packetLoss || 0).toFixed(1)}%`;
+        this.elements.linkStatus.className = `badge ${isConnected ? 'badge-green' : 'badge-red'}`;
+        this.elements.packetLoss.textContent = `${(isConnected ? (comm.packetLoss || 0) : 0).toFixed(1)}%`;
     }
     
     /**
-     * Render alerts
+     * Render live status alert matrices efficiently without innerHTML loops
      */
     renderAlerts(data) {
+        if (!this.elements.alertsGrid) return;
         const alerts = data.alerts || [];
         const grid = this.elements.alertsGrid;
         
-        grid.innerHTML = '';
-        
         if (alerts.length === 0) {
-            grid.innerHTML = `<div class="alert-item alert-ok">
-                <i class="ti ti-check"></i> All systems nominal
-            </div>`;
+            grid.innerHTML = `<div class="alert-item alert-ok"><i class="ti ti-check"></i> All systems nominal</div>`;
             return;
         }
         
-        // Show up to 6 alerts
         const visibleAlerts = alerts.slice(0, 6);
+        const existingItems = grid.querySelectorAll('.alert-item');
         
-        for (const alert of visibleAlerts) {
-            const div = document.createElement('div');
-            const typeClass = {
-                'ok': 'alert-ok',
-                'warn': 'alert-warn',
-                'crit': 'alert-crit',
-                'info': 'alert-info'
-            }[alert.type] || 'alert-ok';
+        visibleAlerts.forEach((alert, index) => {
+            const typeClass = { 'ok': 'alert-ok', 'warn': 'alert-warn', 'crit': 'alert-crit', 'info': 'alert-info' }[alert.type] || 'alert-ok';
+            const innerHTMLContent = `<i class="ti ${alert.icon || 'ti-check'}"></i> ${alert.message || ''}`;
             
-            div.className = `alert-item ${typeClass}`;
-            div.innerHTML = `<i class="ti ${alert.icon || 'ti-check'}"></i> ${alert.message}`;
-            grid.appendChild(div);
+            if (existingItems[index]) {
+                if (existingItems[index].innerHTML !== innerHTMLContent) {
+                    existingItems[index].className = `alert-item ${typeClass}`;
+                    existingItems[index].innerHTML = innerHTMLContent;
+                }
+            } else {
+                const div = document.createElement('div');
+                div.className = `alert-item ${typeClass}`;
+                div.innerHTML = innerHTMLContent;
+                grid.appendChild(div);
+            }
+        });
+        
+        if (existingItems.length > visibleAlerts.length) {
+            for (let i = visibleAlerts.length; i < existingItems.length; i++) {
+                existingItems[i].remove();
+            }
         }
     }
 }
 
 // ============================================================
-// INITIALIZE APPLICATION
+// INITIALIZE APPLICATION INTERFACE
 // ============================================================
 document.addEventListener('DOMContentLoaded', function() {
-    // Create telemetry manager
     const telemetry = new TelemetryManager();
-    
-    // Create dashboard renderer
     const dashboard = new DashboardRenderer(telemetry);
     
-    // Try to connect to WebSocket (will fallback to simulation if not available)
     setTimeout(() => {
         telemetry.connectWebSocket();
     }, 2000);
     
-    // Expose for debugging
     window.__telemetry = telemetry;
     window.__dashboard = dashboard;
     
-    console.log('🚁 Drone Dashboard initialized (Light Mode)');
-    console.log('ℹ️  Using simulated telemetry. Connect to WebSocket for real data.');
+    console.log('🛸 Drone Landing Station Dashboard initialized cleanly.');
 });

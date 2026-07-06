@@ -422,15 +422,17 @@ body {
 
 /* ===== ALERTS ===== */
 .alert-item {
-    display: flex;
+    display: flex !important;
     align-items: center;
-    gap: 8px;
-    padding: 7px 10px;
-    border-radius: var(--border-radius-md);
-    margin-bottom: 6px;
-    font-size: 13px;
-    animation: slideIn 0.3s ease;
-    border: 1px solid transparent;
+    padding: 10px 14px;
+    height: 44px; /* Hard set height to block vertical shaking */
+    box-sizing: border-box;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis; /* Gracefully truncate text overflow instead of expanding the box */
+
+    font-size: 0.85rem !important; /* Makes text smaller and crisp */
+    font-weight: 500;
 }
 
 .alert-item:last-child {
@@ -438,7 +440,8 @@ body {
 }
 
 .alert-item i {
-    font-size: 16px;
+    font-size: 1rem !important;
+    margin-right: 8px;            /* Gives spacing between icon and text */
 }
 
 .alert-crit {
@@ -556,7 +559,10 @@ body {
     }
     
     #alertsGrid {
-        grid-template-columns: 1fr 1fr !important;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr) !important; /* Force exactly 3 equal rows/columns */
+    gap: 10px;
+    width: 100%;
     }
 }
 
@@ -585,4 +591,37 @@ body {
     #alertsGrid {
         grid-template-columns: 1fr !important;
     }
+}
+
+
+/* Container for the battery progress bar tracking */
+.batt-bar-container {
+    width: 100%;
+    height: 12px;
+    background-color: #e2e8f0;
+    border-radius: 6px;
+    overflow: hidden;
+    position: relative;
+}
+
+/* Base style for the moving battery level */
+.batt-bar {
+    height: 100%;
+    width: 0%;
+    background-color: #22c55e; /* Default Nominal Green */
+    transition: width 0.3s ease, background-color 0.5s ease; /* Smooth filling */
+}
+
+/* Dynamic Alert States */
+.batt-bar.warning {
+    background-color: #f59e0b !important; /* Warning Amber */
+}
+
+.batt-bar.danger {
+    background-color: #ef4444 !important; /* Critical Red */
+}
+
+/* Keep the metrics perfectly aligned */
+#batteryPercent, #batteryVoltage, #batteryCurrent, #flightTimeLeft {
+    font-variant-numeric: tabular-nums; /* Prevents text shifting when numbers change */
 }
