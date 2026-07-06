@@ -24,9 +24,6 @@ drone = DroneConnection()
 # Direct USB Serial connection
 CONNECTION_TARGET = 'COM9'
 
-# Wireless Hotspot connection (Uncomment when transferring to target landing station)
-# CONNECTION_TARGET = "udpin:0.0.0.0:14550"
-
 # GLOBAL TELEMETRY STORAGE INITIALIZATION
 latest_telemetry = {}
 
@@ -72,8 +69,6 @@ def get_telemetry_data():
     if drone.is_connected_to_drone():
         try:
             telemetry = drone.get_telemetry()
-            
-            # Base logic for RSSI simulation depending on interface type
             is_udp = "udpin" in CONNECTION_TARGET
             rssi_value = -55 if is_udp else -45
             
@@ -130,7 +125,6 @@ async def reconnect_drone_task():
             except Exception as e:
                 print(f"❌ Connection attempt failed: {e}. Retrying in 3 seconds...")
         
-        # Check link status profile every 3 seconds
         await asyncio.sleep(3)
 
 
@@ -140,7 +134,6 @@ async def update_telemetry_loop():
     global latest_telemetry
     while True:
         latest_telemetry = get_telemetry_data()
-        # Sleep for 50 milliseconds to capture quick hand movements instantly
         await asyncio.sleep(0.05)
 
 
@@ -154,10 +147,8 @@ async def websocket_endpoint(websocket: WebSocket):
     print(f"🚀 Client connected to UI pipe. Total active dashboard clients: {len(active_connections)}")
     
     try:
-        # Send initial frame immediately on socket connection
         await websocket.send_text(json.dumps(latest_telemetry))
         while True:
-            # Broadcast state down to script.js at 10Hz (every 100ms) for smooth UI renders
             await asyncio.sleep(0.1)
             await websocket.send_text(json.dumps(latest_telemetry))
             
@@ -185,5 +176,4 @@ async def startup_event():
 
 
 if __name__ == "__main__":
-    # Ensure hot-reload is active during lab configurations
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)

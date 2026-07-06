@@ -25,17 +25,11 @@ class DroneConnection:
         self.last_heartbeat_time = 0  # Tracking time window to handle physical disconnects
 
     def connect(self, connection_string='COM9'):
-        """
-        Connect to the drone
-        connection_string: 'COM9' for USB (Windows)
-                          '/dev/ttyACM0' for USB (Linux)
-                          'udpin:0.0.0.0:14550' for UDP/Hotspot
-        """
+        """Connect to the drone."""
         try:
             print(f"🔌 Connecting to Pixhawk at: {connection_string}")
             self.mav = mavutil.mavlink_connection(connection_string)
             
-            # Wait for heartbeat (means drone is connected)
             print("⏳ Waiting for heartbeat from Pixhawk...")
             self.mav.wait_heartbeat()
             print("✅ Connected to Pixhawk!")
@@ -76,8 +70,6 @@ class DroneConnection:
         
         while self.running and self.is_connected:
             try:
-                # NON-BLOCKING DRAIN: Consume ALL packets currently in the queue 
-                # so that we process only the absolute latest hardware updates.
                 has_packets = False
                 
                 while True:
@@ -92,7 +84,7 @@ class DroneConnection:
                     
                     if msg_type == 'GLOBAL_POSITION_INT':
                         self._process_position(msg)
-                    elif msg_type == 'BATTERY_STATUS':
+                    elif msg_type in ['SYS_STATUS', 'BATTERY_STATUS']:
                         self._process_battery(msg)
                     elif msg_type == 'HEARTBEAT':
                         self.last_heartbeat_time = time.time()  # True physical heartbeat pulse
@@ -111,7 +103,6 @@ class DroneConnection:
                     break
                 
                 self.last_update = datetime.now()
-                # Yield execution thread briefly to match the Pixhawk stream intervals
                 time.sleep(0.01)
                 
             except (serial.SerialException, OSError, AttributeError) as e:
@@ -131,12 +122,36 @@ class DroneConnection:
         }
     
     def _process_battery(self, msg):
-        voltage = msg.voltages[0] / 1000.0 if msg.voltages else 0.0
-        current = msg.current_battery / 100.0 if msg.current_battery and msg.current_battery > 0 else 0.0
+        # Even if hardware reads 0, we force mock variables to test the frontend gauge displays
         self.telemetry["battery"] = {
-            "voltage": round(voltage, 1),
-            "current": round(current, 1),
-            "percent": msg.battery_remaining if msg.battery_remaining and msg.battery_remaining >= 0 else 0
+            "voltage": 15.6,   # Mocked 4S Battery Volts
+            "current": 4.8,    # Mocked Amps draw
+            "percent": 84      # Mocked Capacity %
+        }
+    
+    def _process_battery(self, msg):
+        msg_type = msg.get_type()
+        voltage = 0.0
+        current = 0.0
+        percent = 0
+
+        # Handle Standard Pixhawk SYS_STATUS payload packet fields
+        if msg_type == 'SYS_STATUS':
+            voltage = msg.voltage_battery / 1000.0 if hasattr(msg, 'voltage_battery') else 0.0
+            current = msg.current_battery / 100.0 if hasattr(msg, 'current_battery') and msg.current_battery > 0 else 0.0
+            percent = msg.battery_remaining if hasattr(msg, 'battery_remaining') and msg.battery_remaining >= 0 else 0
+        
+        # Fallback to smart BATTERY_STATUS packet properties if present
+        elif msg_type == 'BATTERY_STATUS':
+            if hasattr(msg, 'voltages') and msg.voltages:
+                voltage = msg.voltages[0] / 1000.0
+            current = msg.current_battery / 100.0 if hasattr(msg, 'current_battery') and msg.current_battery > 0 else 0.0
+            percent = msg.battery_remaining if hasattr(msg, 'battery_remaining') and msg.battery_remaining >= 0 else 0
+
+        self.telemetry["battery"] = {
+            "voltage": round(max(0.0, voltage), 2),
+            "current": round(max(0.0, current), 1),
+            "percent": int(max(0, min(100, percent)))
         }
     
     def _process_heartbeat(self, msg):
@@ -156,7 +171,6 @@ class DroneConnection:
         }
     
     def _process_attitude(self, msg):
-        # Precise radiant-to-degree transformations parsed on arrival
         self.telemetry["attitude"] = {
             "roll": round(msg.roll * 180.0 / 3.141592653589793, 1),
             "pitch": round(msg.pitch * 180.0 / 3.141592653589793, 1),
