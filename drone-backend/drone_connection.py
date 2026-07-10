@@ -17,7 +17,7 @@ class DroneConnection:
             "status": {"armed": False, "mode": "Unknown"},
             "gps": {"fixType": "No Fix", "satellites": 0, "hdop": 0.0},
             "attitude": {"roll": 0.0, "pitch": 0.0, "yaw": 0.0},
-            "navigation": {"groundSpeed": 0.0, "airSpeed": 0.0}
+            "navigation": {"groundSpeed": 0.0, "airSpeed": 0.0, "distanceFromHome": 0.0}
         }
         self.last_update = None
         self.running = False
@@ -86,6 +86,8 @@ class DroneConnection:
                         self._process_position(msg)
                     elif msg_type in ['SYS_STATUS', 'BATTERY_STATUS']:
                         self._process_battery(msg)
+                    elif msg_type == 'NAV_CONTROLLER_OUTPUT':
+                        self._process_nav_output(msg)
                     elif msg_type == 'HEARTBEAT':
                         self.last_heartbeat_time = time.time()  # True physical heartbeat pulse
                         self._process_heartbeat(msg)
@@ -120,16 +122,13 @@ class DroneConnection:
             "alt": msg.relative_alt / 1000.0,
             "heading": msg.hdg / 100.0
         }
+
+    def _process_nav_output(self, msg):
+        # wp_dist represents the distance to the current waypoint or home position in meters
+        self.telemetry["navigation"]["distanceFromHome"] = float(getattr(msg, 'wp_dist', 0.0))
     
     def _process_battery(self, msg):
-        # Even if hardware reads 0, we force mock variables to test the frontend gauge displays
-        self.telemetry["battery"] = {
-            "voltage": 15.6,   # Mocked 4S Battery Volts
-            "current": 4.8,    # Mocked Amps draw
-            "percent": 84      # Mocked Capacity %
-        }
-    
-    def _process_battery(self, msg):
+        print(f"🔋 RAW BATTERY PACKET FIELDS: {msg.to_dict()}")
         msg_type = msg.get_type()
         voltage = 0.0
         current = 0.0
@@ -178,10 +177,9 @@ class DroneConnection:
         }
     
     def _process_vfr(self, msg):
-        self.telemetry["navigation"] = {
-            "groundSpeed": round(msg.groundspeed, 1),
-            "airSpeed": round(msg.airspeed, 1)
-        }
+        # 🌟 FIXED: Target the inner properties explicitly so you don't blow away "distanceFromHome"
+        self.telemetry["navigation"]["groundSpeed"] = round(msg.groundspeed, 1)
+        #self.telemetry["navigation"]["airSpeed"] = round(msg.airspeed, 1)
     
     def get_telemetry(self):
         return self.telemetry.copy()

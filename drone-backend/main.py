@@ -1,5 +1,6 @@
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from contextlib import asynccontextmanager
 import uvicorn
 import json
 from datetime import datetime
@@ -7,7 +8,18 @@ import asyncio
 import time
 from drone_connection import DroneConnection
 
-app = FastAPI(title="Drone Telemetry API (Hybrid Setup)")
+# 🌟 LIFESPAN MANAGMENT: Replaces deprecated startup events cleanly
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    print("⚙️ Initializing async background worker loops...")
+    reconnect_task = asyncio.create_task(reconnect_drone_task())
+    update_task = asyncio.create_task(update_telemetry_loop())
+    yield
+    # Clean up tasks on shutdown
+    reconnect_task.cancel()
+    update_task.cancel()
+
+app = FastAPI(title="Drone Telemetry API (Hybrid Setup)", lifespan=lifespan)
 
 # CORS MIDDLEWARE
 app.add_middleware(
@@ -24,10 +36,7 @@ drone = DroneConnection()
 # Direct USB Serial connection
 CONNECTION_TARGET = 'COM9'
 
-# GLOBAL TELEMETRY STORAGE INITIALIZATION
-latest_telemetry = {}
-
-# STATIC TEMPLATE: Used when the drone is disconnected or when read threads fail
+# STATIC TEMPLATE: Used when the drone is disconnected
 DISCONNECTED_TELEMETRY_TEMPLATE = {
     "droneId": "Drone-001",
     "connectionStatus": "Disconnected",
@@ -51,7 +60,7 @@ DISCONNECTED_TELEMETRY_TEMPLATE = {
     }
 }
 
-# Ensure global state starts safe before tasks kick off
+# Ensure global state starts safe
 latest_telemetry = DISCONNECTED_TELEMETRY_TEMPLATE.copy()
 
 
@@ -81,7 +90,7 @@ def get_telemetry_data():
                 "position": telemetry["position"],
                 "navigation": {
                     "groundSpeed": telemetry["navigation"]["groundSpeed"],
-                    "distanceFromHome": 0.0 
+                    "distanceFromHome": telemetry["navigation"].get("distanceFromHome", 0.0)
                 },
                 "attitude": telemetry["attitude"],
                 "gps": telemetry["gps"],
@@ -106,6 +115,7 @@ def get_telemetry_data():
             }
         except Exception as e:
             print(f"❌ Error extracting telemetry dictionary: {e}")
+            # 🌟 FIXED: Instantly short-circuit here if data parsing fails
             
     disconnected_data = DISCONNECTED_TELEMETRY_TEMPLATE.copy()
     disconnected_data["communication"]["lastUpdate"] = datetime.now().isoformat()
@@ -114,13 +124,14 @@ def get_telemetry_data():
 
 # BACKGROUND RECONNECTION TASK
 async def reconnect_drone_task():
-    """Continuously monitors connection state and executes hot-reconnect attempts if target drops"""
+    """Continuously monitors connection state and executes hot-reconnect attempts safely"""
     print(f"🔌 Hardware monitoring loop active. Target profile: {CONNECTION_TARGET}")
     while True:
         if not drone.is_connected_to_drone():
             print(f"⚡ Connection broken/inactive. Instantiating hook to: {CONNECTION_TARGET}...")
             try:
-                drone.connect(CONNECTION_TARGET)
+                # 🌟 FIXED: Use an executor thread to prevent pymavlink connection timeouts from freezing the API
+                await asyncio.to_thread(drone.connect, CONNECTION_TARGET)
                 print("✅ Successfully established connection handle!")
             except Exception as e:
                 print(f"❌ Connection attempt failed: {e}. Retrying in 3 seconds...")
@@ -128,7 +139,7 @@ async def reconnect_drone_task():
         await asyncio.sleep(3)
 
 
-# BACKGROUND UPDATE LOOP (Throttled to 20Hz for Real-time Hardware Extraction)
+# BACKGROUND UPDATE LOOP (Throttled to 20Hz)
 async def update_telemetry_loop():
     """Background task that pulls telemetry updates from the drone instance at 20Hz"""
     global latest_telemetry
@@ -147,9 +158,10 @@ async def websocket_endpoint(websocket: WebSocket):
     print(f"🚀 Client connected to UI pipe. Total active dashboard clients: {len(active_connections)}")
     
     try:
+        # Send initial immediate payload snapshot
         await websocket.send_text(json.dumps(latest_telemetry))
         while True:
-            await asyncio.sleep(0.1)
+            await asyncio.sleep(0.1)  # 10Hz UI dashboard feed rate
             await websocket.send_text(json.dumps(latest_telemetry))
             
     except WebSocketDisconnect:
@@ -167,13 +179,6 @@ async def get_latest_telemetry():
     return latest_telemetry
 
 
-# STARTUP EVENT - Register background tasks cleanly
-@app.on_event("startup")
-async def startup_event():
-    print("⚙️ Initializing async background worker loops...")
-    asyncio.create_task(reconnect_drone_task())
-    asyncio.create_task(update_telemetry_loop())
-
-
 if __name__ == "__main__":
+    # Note: main:app targets main.py file name string dynamically
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
