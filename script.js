@@ -64,7 +64,7 @@ class TelemetryManager {
             
             this.updateData({
                 position: { lat, lng, alt, heading },
-                navigation: { groundSpeed, distanceHome },
+                navigation: { groundSpeed, distanceFromHome: distanceHome },
                 battery: { percent: Math.round(batteryPercent) },
                 communication: { lastUpdate: Date.now() }
             });
@@ -74,7 +74,7 @@ class TelemetryManager {
     /**
      * Connect to WebSocket for real telemetry
      */
-    connectWebSocket(url = 'ws://localhost:8000/ws/telemetry') {
+    connectWebSocket(url = TelemetryManager.defaultWebSocketUrl()) {
         try {
             console.log('🔌 Connecting to WebSocket:', url);
             this.ws = new WebSocket(url);
@@ -137,6 +137,7 @@ class TelemetryManager {
                 this.addAlert('Lost connection to telemetry server', 'crit');
                 
                 this.isSimulating = true;
+                this.startSimulation();
                 if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
                 this.reconnectTimer = setTimeout(() => {
                     console.log('🔄 Attempting to reconnect...');
@@ -157,6 +158,12 @@ class TelemetryManager {
                 this.connectWebSocket(url);
             }, 5000);
         }
+    }
+
+    static defaultWebSocketUrl() {
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const hostname = window.location.hostname || 'localhost';
+        return `${protocol}//${hostname}:8000/ws/telemetry`;
     }
     
     /**

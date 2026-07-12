@@ -228,6 +228,22 @@ body {
     gap: 8px;
 }
 
+.metric-grid-spaced {
+    margin-top: 10px;
+}
+
+.metric-grid-spaced-sm {
+    margin-top: 8px;
+}
+
+.row-label {
+    color: var(--color-text-secondary);
+}
+
+.row-value {
+    font-weight: 500;
+}
+
 .metric {
     background: var(--color-background-secondary);
     border-radius: var(--border-radius-md);
@@ -421,6 +437,12 @@ body {
 }
 
 /* ===== ALERTS ===== */
+#alertsGrid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+}
+
 .alert-item {
     display: flex !important;
     align-items: center;
@@ -500,6 +522,12 @@ body {
     height: 24px;
 }
 
+.rssi-display {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
 .rssi-bar span {
     width: 5px;
     border-radius: 1px;
@@ -559,10 +587,9 @@ body {
     }
     
     #alertsGrid {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr) !important; /* Force exactly 3 equal rows/columns */
-    gap: 10px;
-    width: 100%;
+        grid-template-columns: 1fr;
+        gap: 6px;
+        width: 100%;
     }
 }
 
@@ -589,39 +616,20 @@ body {
     }
     
     #alertsGrid {
-        grid-template-columns: 1fr !important;
+        grid-template-columns: 1fr;
     }
 }
 
 
-/* Container for the battery progress bar tracking */
-.batt-bar-container {
-    width: 100%;
-    height: 12px;
-    background-color: #e2e8f0;
-    border-radius: 6px;
-    overflow: hidden;
-    position: relative;
-}
-
-/* Base style for the moving battery level */
-.batt-bar {
-    height: 100%;
-    width: 0%;
-    background-color: #22c55e; /* Default Nominal Green */
-    transition: width 0.3s ease, background-color 0.5s ease; /* Smooth filling */
-}
-
-/* Dynamic Alert States */
-.batt-bar.warning {
-    background-color: #f59e0b !important; /* Warning Amber */
-}
-
-.batt-bar.danger {
-    background-color: #ef4444 !important; /* Critical Red */
-}
-
 /* Keep the metrics perfectly aligned */
 #batteryPercent, #batteryVoltage, #batteryCurrent, #flightTimeLeft {
     font-variant-numeric: tabular-nums; /* Prevents text shifting when numbers change */
+}
+
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+    }
 }
