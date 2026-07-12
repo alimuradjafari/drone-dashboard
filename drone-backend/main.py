@@ -6,6 +6,7 @@ import json
 from datetime import datetime
 import asyncio
 import time
+from copy import deepcopy
 from drone_connection import DroneConnection
 
 # 🌟 LIFESPAN MANAGMENT: Replaces deprecated startup events cleanly
@@ -18,6 +19,8 @@ async def lifespan(app: FastAPI):
     # Clean up tasks on shutdown
     reconnect_task.cancel()
     update_task.cancel()
+    await asyncio.gather(reconnect_task, update_task, return_exceptions=True)
+    await asyncio.to_thread(drone.disconnect)
 
 app = FastAPI(title="Drone Telemetry API (Hybrid Setup)", lifespan=lifespan)
 
@@ -61,7 +64,7 @@ DISCONNECTED_TELEMETRY_TEMPLATE = {
 }
 
 # Ensure global state starts safe
-latest_telemetry = DISCONNECTED_TELEMETRY_TEMPLATE.copy()
+latest_telemetry = deepcopy(DISCONNECTED_TELEMETRY_TEMPLATE)
 
 
 def get_telemetry_data():
@@ -117,7 +120,7 @@ def get_telemetry_data():
             print(f"❌ Error extracting telemetry dictionary: {e}")
             # 🌟 FIXED: Instantly short-circuit here if data parsing fails
             
-    disconnected_data = DISCONNECTED_TELEMETRY_TEMPLATE.copy()
+    disconnected_data = deepcopy(DISCONNECTED_TELEMETRY_TEMPLATE)
     disconnected_data["communication"]["lastUpdate"] = datetime.now().isoformat()
     return disconnected_data
 
@@ -131,8 +134,11 @@ async def reconnect_drone_task():
             print(f"⚡ Connection broken/inactive. Instantiating hook to: {CONNECTION_TARGET}...")
             try:
                 # 🌟 FIXED: Use an executor thread to prevent pymavlink connection timeouts from freezing the API
-                await asyncio.to_thread(drone.connect, CONNECTION_TARGET)
-                print("✅ Successfully established connection handle!")
+                connected = await asyncio.to_thread(drone.connect, CONNECTION_TARGET)
+                if connected:
+                    print("✅ Successfully established connection handle!")
+                else:
+                    print("❌ Connection attempt did not establish a heartbeat. Retrying in 3 seconds...")
             except Exception as e:
                 print(f"❌ Connection attempt failed: {e}. Retrying in 3 seconds...")
         
@@ -165,7 +171,8 @@ async def websocket_endpoint(websocket: WebSocket):
             await websocket.send_text(json.dumps(latest_telemetry))
             
     except WebSocketDisconnect:
-        active_connections.remove(websocket)
+        if websocket in active_connections:
+            active_connections.remove(websocket)
         print(f"🛑 Client disconnected from UI pipe. Total remaining clients: {len(active_connections)}")
 
 
