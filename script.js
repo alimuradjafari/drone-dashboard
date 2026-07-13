@@ -31,10 +31,10 @@ class TelemetryManager {
         this.ws = null;
         this.reconnectTimer = null;
         this.updateInterval = null;
-        this.isSimulating = true;
+        this.isSimulating = new URLSearchParams(window.location.search).get('demo') === '1';
         
         // Start simulation
-        this.startSimulation();
+        if (this.isSimulating) this.startSimulation();
     }
     
     /**
@@ -80,7 +80,7 @@ class TelemetryManager {
             this.ws = new WebSocket(url);
             
             this.ws.onopen = () => {
-                console.log('✅ WebSocket connected successfully!');
+                console.log(' WebSocket connected successfully!');
                 this.isSimulating = false;
                 
                 // CRITICAL FIX: Kill the background simulation interval completely 
@@ -136,11 +136,10 @@ class TelemetryManager {
                 });
                 this.addAlert('Lost connection to telemetry server', 'crit');
                 
-                this.isSimulating = true;
-                this.startSimulation();
+                if (this.isSimulating) this.startSimulation();
                 if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
                 this.reconnectTimer = setTimeout(() => {
-                    console.log('🔄 Attempting to reconnect...');
+                    console.log(' Attempting to reconnect...');
                     this.connectWebSocket(url);
                 }, 5000);
             };
@@ -151,7 +150,7 @@ class TelemetryManager {
             };
         } catch (error) {
             console.error('❌ WebSocket connection failed:', error);
-            this.isSimulating = true;
+            // Remain disconnected in production; append ?demo=1 to enable simulation.
             if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
             this.reconnectTimer = setTimeout(() => {
                 console.log('🔄 Retrying connection...');
@@ -163,7 +162,10 @@ class TelemetryManager {
     static defaultWebSocketUrl() {
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const hostname = window.location.hostname || 'localhost';
-        return `${protocol}//${hostname}:8000/ws/telemetry`;
+        const url = new URL(`${protocol}//${hostname}:8000/ws/telemetry`);
+        const apiKey = window.localStorage.getItem('dashboardApiKey');
+        if (apiKey) url.searchParams.set('token', apiKey);
+        return url.toString();
     }
     
     /**
@@ -697,7 +699,7 @@ class DashboardRenderer {
             bar.className = index < activeBars ? '' : 'inactive';
         });
         
-        const linkStatus = isConnected ? 'Active' : 'Disconnected';
+        const linkStatus = isConnected ? (comm.transport || comm.linkStatus || 'Active') : 'Disconnected';
         this.elements.linkStatus.textContent = linkStatus;
         this.elements.linkStatus.className = `badge ${isConnected ? 'badge-green' : 'badge-red'}`;
         this.elements.packetLoss.textContent = `${(isConnected ? (comm.packetLoss || 0) : 0).toFixed(1)}%`;
@@ -758,5 +760,5 @@ document.addEventListener('DOMContentLoaded', function() {
     window.__telemetry = telemetry;
     window.__dashboard = dashboard;
     
-    console.log('🛸 Drone Landing Station Dashboard initialized cleanly.');
+    console.log(' Drone Landing Station Dashboard initialized cleanly.');
 });

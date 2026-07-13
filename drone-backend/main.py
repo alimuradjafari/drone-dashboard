@@ -1,5 +1,6 @@
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, WebSocket, WebSocketDisconnect, status
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, Field
 from contextlib import asynccontextmanager
 import uvicorn
 import json
@@ -8,11 +9,17 @@ import asyncio
 import time
 from copy import deepcopy
 from drone_connection import DroneConnection
+from config import API_KEY, BATTERY_CAPACITY_MAH, CONNECTION_TARGETS, CORS_ORIGINS, DRONE_ID, HEARTBEAT_TIMEOUT, STALE_AFTER_SECONDS
 
-# 🌟 LIFESPAN MANAGMENT: Replaces deprecated startup events cleanly
+
+def require_api_key(x_api_key: str | None = Header(default=None)):
+    if API_KEY and x_api_key != API_KEY:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid API key")
+
+#  LIFESPAN MANAGMENT: Replaces deprecated startup events cleanly
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    print("⚙️ Initializing async background worker loops...")
+    print(" Initializing async background worker loops...")
     reconnect_task = asyncio.create_task(reconnect_drone_task())
     update_task = asyncio.create_task(update_telemetry_loop())
     yield
@@ -27,8 +34,8 @@ app = FastAPI(title="Drone Telemetry API (Hybrid Setup)", lifespan=lifespan)
 # CORS MIDDLEWARE
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=CORS_ORIGINS,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -37,11 +44,11 @@ app.add_middleware(
 drone = DroneConnection()
 
 # Direct USB Serial connection
-CONNECTION_TARGET = 'COM9'
+CONNECTION_TARGET = CONNECTION_TARGETS[0]
 
 # STATIC TEMPLATE: Used when the drone is disconnected
 DISCONNECTED_TELEMETRY_TEMPLATE = {
-    "droneId": "Drone-001",
+    "droneId": DRONE_ID,
     "connectionStatus": "Disconnected",
     "armed": False,
     "flightMode": "Unknown",
@@ -63,6 +70,18 @@ DISCONNECTED_TELEMETRY_TEMPLATE = {
     }
 }
 
+
+class ChargingTelemetry(BaseModel):
+    docked: bool = False
+    status: str = "Unknown"
+    progress: float = Field(default=0, ge=0, le=100)
+    voltage: float = Field(default=0, ge=0)
+    current: float = Field(default=0, ge=0)
+    eta: float = Field(default=0, ge=0)
+
+
+charging_telemetry = ChargingTelemetry()
+
 # Ensure global state starts safe
 latest_telemetry = deepcopy(DISCONNECTED_TELEMETRY_TEMPLATE)
 
@@ -75,17 +94,19 @@ def get_telemetry_data():
 
     # Watchdog Check
     if time_since_last_heartbeat > 4.0 and drone.is_connected_to_drone():
-        print(f"⚠️ WATCHDOG TRIGGERED: Lost heartbeat connection for {time_since_last_heartbeat:.1f}s. Forcing offline state.")
+        print(f" WATCHDOG TRIGGERED: Lost heartbeat connection for {time_since_last_heartbeat:.1f}s. Forcing offline state.")
         drone.is_connected = False  
 
     if drone.is_connected_to_drone():
         try:
             telemetry = drone.get_telemetry()
-            is_udp = "udpin" in CONNECTION_TARGET
-            rssi_value = -55 if is_udp else -45
-            
+            percent = telemetry["battery"]["percent"]
+            capacity = round(BATTERY_CAPACITY_MAH * percent / 100) if BATTERY_CAPACITY_MAH else 0
+            current = telemetry["battery"]["current"]
+            time_left = round((capacity / 1000) / current * 60) if capacity and current > 0 else 0
+            data_age = max(0.0, time.time() - drone.last_heartbeat_time)
             return {
-                "droneId": "Drone-001",
+                "droneId": DRONE_ID,
                 "connectionStatus": "Connected",
                 "armed": telemetry["status"]["armed"],
                 "flightMode": telemetry["status"]["mode"],
@@ -101,26 +122,27 @@ def get_telemetry_data():
                     "percent": telemetry["battery"]["percent"],
                     "voltage": telemetry["battery"]["voltage"],
                     "current": telemetry["battery"]["current"],
-                    "capacity": 0,
-                    "timeLeft": 0,
+                    "capacity": capacity,
+                    "timeLeft": time_left,
                     "health": "Healthy" if telemetry["battery"]["percent"] > 20 else "Critical"
                 },
-                "charging": {
-                    "docked": False, "status": "Not Charging", "progress": 0,
-                    "voltage": 0, "current": 0, "eta": 0
-                },
+                "charging": charging_telemetry.model_dump(),
                 "communication": {
-                    "rssi": rssi_value,
-                    "linkStatus": "Connected",
-                    "packetLoss": 0.2 if not is_udp else 0.5,
+                    "rssi": telemetry["communication"]["rssi"],
+                    "linkStatus": drone.transport,
+                    "packetLoss": telemetry["communication"]["packetLoss"],
+                    "transport": drone.transport,
+                    "dataAge": round(data_age, 2),
+                    "quality": "Stale" if data_age > STALE_AFTER_SECONDS else "Live",
                     "lastUpdate": datetime.now().isoformat()
                 }
             }
         except Exception as e:
-            print(f"❌ Error extracting telemetry dictionary: {e}")
-            # 🌟 FIXED: Instantly short-circuit here if data parsing fails
+            print(f" Error extracting telemetry dictionary: {e}")
+            #  FIXED: Instantly short-circuit here if data parsing fails
             
     disconnected_data = deepcopy(DISCONNECTED_TELEMETRY_TEMPLATE)
+    disconnected_data["charging"] = charging_telemetry.model_dump()
     disconnected_data["communication"]["lastUpdate"] = datetime.now().isoformat()
     return disconnected_data
 
@@ -128,15 +150,17 @@ def get_telemetry_data():
 # BACKGROUND RECONNECTION TASK
 async def reconnect_drone_task():
     """Continuously monitors connection state and executes hot-reconnect attempts safely"""
-    print(f"🔌 Hardware monitoring loop active. Target profile: {CONNECTION_TARGET}")
+    print(f"Hardware monitoring active. Targets: {', '.join(CONNECTION_TARGETS)}")
+    target_index = 0
     while True:
         if not drone.is_connected_to_drone():
-            print(f"⚡ Connection broken/inactive. Instantiating hook to: {CONNECTION_TARGET}...")
+            target = CONNECTION_TARGETS[target_index]
+            target_index = (target_index + 1) % len(CONNECTION_TARGETS)
+            print(f"Connection inactive. Trying: {target}")
             try:
-                # 🌟 FIXED: Use an executor thread to prevent pymavlink connection timeouts from freezing the API
-                connected = await asyncio.to_thread(drone.connect, CONNECTION_TARGET)
+                connected = await asyncio.to_thread(drone.connect, target, HEARTBEAT_TIMEOUT)
                 if connected:
-                    print("✅ Successfully established connection handle!")
+                    print(" Successfully established connection handle!")
                 else:
                     print("❌ Connection attempt did not establish a heartbeat. Retrying in 3 seconds...")
             except Exception as e:
@@ -158,10 +182,13 @@ async def update_telemetry_loop():
 active_connections = []
 
 @app.websocket("/ws/telemetry")
-async def websocket_endpoint(websocket: WebSocket):
+async def websocket_endpoint(websocket: WebSocket, token: str | None = Query(default=None)):
+    if API_KEY and token != API_KEY:
+        await websocket.close(code=1008, reason="Invalid API key")
+        return
     await websocket.accept()
     active_connections.append(websocket)
-    print(f"🚀 Client connected to UI pipe. Total active dashboard clients: {len(active_connections)}")
+    print(f" Client connected to UI pipe. Total active dashboard clients: {len(active_connections)}")
     
     try:
         # Send initial immediate payload snapshot
@@ -173,7 +200,7 @@ async def websocket_endpoint(websocket: WebSocket):
     except WebSocketDisconnect:
         if websocket in active_connections:
             active_connections.remove(websocket)
-        print(f"🛑 Client disconnected from UI pipe. Total remaining clients: {len(active_connections)}")
+        print(f" Client disconnected from UI pipe. Total remaining clients: {len(active_connections)}")
 
 
 @app.get("/")
@@ -182,8 +209,27 @@ async def root():
 
 
 @app.get("/api/telemetry/latest")
-async def get_latest_telemetry():
+async def get_latest_telemetry(_: None = Depends(require_api_key)):
     return latest_telemetry
+
+
+@app.get("/api/status", dependencies=[Depends(require_api_key)])
+async def get_status():
+    age = max(0.0, time.time() - drone.last_heartbeat_time) if drone.last_heartbeat_time else None
+    return {
+        "connected": drone.is_connected_to_drone(),
+        "transport": drone.transport,
+        "connection": drone.connection_string,
+        "heartbeatAge": round(age, 2) if age is not None else None,
+        "configuredTargets": CONNECTION_TARGETS,
+    }
+
+
+@app.put("/api/charging", dependencies=[Depends(require_api_key)])
+async def update_charging(payload: ChargingTelemetry):
+    global charging_telemetry
+    charging_telemetry = payload
+    return {"status": "updated", "charging": payload}
 
 
 if __name__ == "__main__":
