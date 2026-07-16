@@ -14,7 +14,7 @@ class DroneConnection:
         self.is_connected = False
         self.telemetry = {
             "position": {"lat": 0.0, "lng": 0.0, "alt": 0.0, "heading": 0.0},
-            "battery": {"voltage": 0.0, "current": 0.0, "percent": 0},
+            "battery": {"voltage": 0.0, "current": 0.0, "percent": 0, "consumedMah": None},
             "status": {"armed": False, "mode": "Unknown"},
             "gps": {"fixType": "No Fix", "satellites": 0, "hdop": 0.0},
             "attitude": {"roll": 0.0, "pitch": 0.0, "yaw": 0.0},
@@ -158,7 +158,15 @@ class DroneConnection:
         self.telemetry["navigation"]["distanceFromHome"] = float(getattr(msg, 'wp_dist', 0.0))
     
     def _process_battery(self, msg):
-        print(f" Processing battery message: {msg}")
+        print({
+                "type": msg.get_type(),
+                "battery_remaining": getattr(msg, "battery_remaining", None),
+                "current_consumed": getattr(msg, "current_consumed", None),
+                "voltage_battery": getattr(msg, "voltage_battery", None),
+                "voltages": getattr(msg, "voltages", None),
+            })
+        
+        
         msg_type = msg.get_type()
         previous = self.telemetry["battery"]
         voltage = previous["voltage"]
@@ -189,11 +197,20 @@ class DroneConnection:
         if raw_percent >= 0:
             percent = raw_percent
 
+        raw_consumed = getattr(msg, "current_consumed", -1)
+
+        if raw_consumed >= 0:
+            consumed_mah = raw_consumed
+        else:
+            consumed_mah = previous.get("consumedMah")
+            
         self.telemetry["battery"] = {
             "voltage": round(max(0.0, voltage), 2),
             "current": round(max(0.0, current), 1),
-            "percent": int(max(0, min(100, percent)))
+            "percent": int(max(0, min(100, percent))),
+            "consumedMah":consumed_mah
         }
+        
     
     def _process_heartbeat(self, msg):
         is_armed = (msg.base_mode & mavutil.mavlink.MAV_MODE_FLAG_SAFETY_ARMED) != 0

@@ -101,9 +101,13 @@ def get_telemetry_data():
         try:
             telemetry = drone.get_telemetry()
             percent = telemetry["battery"]["percent"]
-            capacity = round(BATTERY_CAPACITY_MAH * percent / 100) if BATTERY_CAPACITY_MAH else 0
+            consumed = telemetry["battery"].get("consumedMah")
+            if BATTERY_CAPACITY_MAH and consumed is not None:
+                capacity_left = max(0, BATTERY_CAPACITY_MAH - consumed)
+            else:
+                capacity_left = round(BATTERY_CAPACITY_MAH * percent / 100)
             current = telemetry["battery"]["current"]
-            time_left = round((capacity / 1000) / current * 60) if capacity and current > 0 else 0
+            time_left = round((capacity_left / 1000) / current * 60) if capacity_left and current > 0 else 0
             data_age = max(0.0, time.time() - drone.last_heartbeat_time)
             return {
                 "droneId": DRONE_ID,
@@ -122,7 +126,7 @@ def get_telemetry_data():
                     "percent": telemetry["battery"]["percent"],
                     "voltage": telemetry["battery"]["voltage"],
                     "current": telemetry["battery"]["current"],
-                    "capacity": capacity,
+                    "capacity": capacity_left,
                     "timeLeft": time_left,
                     "health": "Healthy" if telemetry["battery"]["percent"] > 20 else "Critical"
                 },
