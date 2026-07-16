@@ -158,24 +158,36 @@ class DroneConnection:
         self.telemetry["navigation"]["distanceFromHome"] = float(getattr(msg, 'wp_dist', 0.0))
     
     def _process_battery(self, msg):
-        print(f" RAW BATTERY PACKET FIELDS: {msg.to_dict()}")
+        print(f" Processing battery message: {msg}")
         msg_type = msg.get_type()
-        voltage = 0.0
-        current = 0.0
-        percent = 0
+        previous = self.telemetry["battery"]
+        voltage = previous["voltage"]
+        current = previous["current"]
+        percent = previous["percent"]
 
-        # Handle Standard Pixhawk SYS_STATUS payload packet fields
+        # Never replace a valid reading with MAVLink's unavailable sentinels.
         if msg_type == 'SYS_STATUS':
-            voltage = msg.voltage_battery / 1000.0 if hasattr(msg, 'voltage_battery') else 0.0
-            current = msg.current_battery / 100.0 if hasattr(msg, 'current_battery') and msg.current_battery > 0 else 0.0
-            percent = msg.battery_remaining if hasattr(msg, 'battery_remaining') and msg.battery_remaining >= 0 else 0
-        
-        # Fallback to smart BATTERY_STATUS packet properties if present
+            raw_voltage = getattr(msg, 'voltage_battery', 65535)
+            if 0 < raw_voltage < 65535:
+                voltage = raw_voltage / 1000.0
         elif msg_type == 'BATTERY_STATUS':
-            if hasattr(msg, 'voltages') and msg.voltages:
-                voltage = msg.voltages[0] / 1000.0
-            current = msg.current_battery / 100.0 if hasattr(msg, 'current_battery') and msg.current_battery > 0 else 0.0
-            percent = msg.battery_remaining if hasattr(msg, 'battery_remaining') and msg.battery_remaining >= 0 else 0
+            # BATTERY_STATUS contains per-cell voltages. Unused cells are 65535.
+            cells = [value for value in getattr(msg, 'voltages', []) if 0 < value < 65535]
+            cells.extend(value for value in getattr(msg, 'voltages_ext', []) if 0 < value < 65535)
+            if cells:
+                voltage = sum(cells) / 1000.0
+        else:
+            return
+
+        raw_current = getattr(msg, 'current_battery', -1)
+        if raw_current >= 0:
+            current = raw_current / 100.0
+
+        # Prefer the flight controller's calibrated estimate. Voltage-only pack
+        # estimation is chemistry/cell-count dependent and causes unstable values.
+        raw_percent = getattr(msg, 'battery_remaining', -1)
+        if raw_percent >= 0:
+            percent = raw_percent
 
         self.telemetry["battery"] = {
             "voltage": round(max(0.0, voltage), 2),

@@ -31,6 +31,8 @@ class TelemetryManager {
         this.ws = null;
         this.reconnectTimer = null;
         this.updateInterval = null;
+        this.batteryAlertLevel = null;
+        this.linkAlertActive = false;
         this.isSimulating = new URLSearchParams(window.location.search).get('demo') === '1';
         
         // Start simulation
@@ -113,14 +115,13 @@ class TelemetryManager {
                     
                     // Trigger tracking alert filters if connected
                     if (data.connectionStatus !== 'Disconnected') {
-                        if (data.battery && data.battery.percent < 30) {
-                            this.addAlert(`Battery at ${data.battery.percent}% - Land soon!`, 'warn');
-                        }
-                        if (data.battery && data.battery.percent < 15) {
-                            this.addAlert(`CRITICAL: Battery at ${data.battery.percent}%!`, 'crit');
-                        }
+                        this.linkAlertActive = false;
+                        this.updateBatteryAlert(data.battery);
                     } else {
-                        this.addAlert('Hardware communication link interrupted.', 'crit');
+                        if (!this.linkAlertActive) {
+                            this.addAlert('Hardware communication link interrupted.', 'crit');
+                            this.linkAlertActive = true;
+                        }
                     }
                     
                 } catch (error) {
@@ -200,6 +201,25 @@ class TelemetryManager {
         if (this.data.alerts.length > 0 && this.data.alerts[0].message === message) return;
         this.data.alerts = [alert, ...this.data.alerts.slice(0, 9)];
         this.notifyListeners();
+    }
+
+    /** Add one alert only when the battery crosses into a new severity band. */
+    updateBatteryAlert(battery) {
+        if (!battery || typeof battery.percent !== 'number') return;
+
+        const percent = Math.max(0, Math.min(100, Math.round(battery.percent)));
+        const level = percent < 15 ? 'critical' : percent < 30 ? 'warning' : 'normal';
+        if (level === this.batteryAlertLevel) return;
+
+        const previousLevel = this.batteryAlertLevel;
+        this.batteryAlertLevel = level;
+        if (level === 'critical') {
+            this.addAlert(`CRITICAL: Battery at ${percent}%!`, 'crit');
+        } else if (level === 'warning') {
+            this.addAlert(`Battery at ${percent}% - Land soon!`, 'warn');
+        } else if (previousLevel === 'warning' || previousLevel === 'critical') {
+            this.addAlert(`Battery recovered to ${percent}%`, 'ok');
+        }
     }
     
     /**
