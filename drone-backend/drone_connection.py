@@ -26,7 +26,7 @@ class DroneConnection:
         self.thread = None
         self.last_heartbeat_time = 0  # Tracking time window to handle physical disconnects
         self.connection_string = None
-        self.transport = "disconnected"
+        self.transport = "disconnected"  # Will be set to COM, WIFI, or CELLULAR
         self.home_position = None
 
     def connect(self, connection_string='COM9', heartbeat_timeout=5.0):
@@ -44,7 +44,7 @@ class DroneConnection:
             
             self.is_connected = True
             self.connection_string = connection_string
-            self.transport = self._transport_name(connection_string)
+            self.transport = self._get_connection_type(connection_string)  # ✅ Updated method name
             self.last_heartbeat_time = time.time()  # Initialize heartbeat clock
             
             # Force the Pixhawk stream rate limits immediately over serial interface links
@@ -208,7 +208,7 @@ class DroneConnection:
             "voltage": round(max(0.0, voltage), 2),
             "current": round(max(0.0, current), 1),
             "percent": int(max(0, min(100, percent))),
-            "consumedMah":consumed_mah
+            "consumedMah": consumed_mah
         }
         
     
@@ -249,14 +249,40 @@ class DroneConnection:
         packet_loss = round((errors / total) * 100, 1) if total else 0.0
         self.telemetry["communication"] = {"rssi": rssi_dbm, "packetLoss": packet_loss}
 
-    @staticmethod
-    def _transport_name(connection_string):
+    def _get_connection_type(self, connection_string):
+        """
+        Determine the connection type and return standardized values:
+        - COM for USB/Serial connections
+        - WIFI for Wi-Fi connections
+        - CELLULAR for cellular modem connections
+        """
         value = connection_string.lower()
-        if value.startswith(('udp:', 'udpin:', 'udpout:')):
-            return "Wi-Fi/Cellular UDP"
-        if value.startswith(('tcp:', 'tcpin:')):
-            return "Network TCP"
-        return "USB Serial"
+        
+        # Check for cellular modems (common cellular connection strings)
+        if any(keyword in value for keyword in ['/dev/ttyusb', 'com', 'usb']):
+            # Check if it's a cellular modem (usually has specific VID/PID or modem name)
+            # You can expand this detection based on your specific hardware
+            if any(keyword in value for keyword in ['modem', 'cell', '4g', '5g', 'lte', 'wwan']):
+                return "CELLULAR"
+            return "COM"
+        
+        # Check for Wi-Fi/UDP connections
+        elif any(keyword in value for keyword in ['udp:', 'udpin:', 'udpout:', 'tcp:', 'tcpin:', 'wifi', 'wireless']):
+            # Check if it's a cellular hotspot (often uses specific ports or patterns)
+            if any(keyword in value for keyword in ['cell', '4g', '5g', 'lte', 'hotspot']):
+                return "CELLULAR"
+            return "WIFI"
+        
+        # Default fallback - check if it looks like a network connection
+        elif any(keyword in value for keyword in [':', '/', '192.', '10.', '172.', 'localhost', '127.']):
+            return "WIFI"
+        
+        # If it's a serial port, treat as COM
+        elif any(keyword in value for keyword in ['com', 'tty', 'usb']):
+            return "COM"
+        
+        # If we can't determine, default to the raw connection type
+        return "WIFI"  # Default to WIFI for unknown network connections
     
     def get_telemetry(self):
         return self.telemetry.copy()

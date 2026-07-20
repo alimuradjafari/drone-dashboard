@@ -53,6 +53,7 @@ DISCONNECTED_TELEMETRY_TEMPLATE = {
     "armed": False,
     "flightMode": "Unknown",
     "missionStatus": "Unknown",
+    "connectionType": "None",
     "position": {"lat": 0.0, "lng": 0.0, "alt": 0.0, "heading": 0.0},
     "navigation": {"groundSpeed": 0.0, "distanceFromHome": 0.0},
     "attitude": {"roll": 0.0, "pitch": 0.0, "yaw": 0.0},
@@ -115,6 +116,7 @@ def get_telemetry_data():
                 "armed": telemetry["status"]["armed"],
                 "flightMode": telemetry["status"]["mode"],
                 "missionStatus": "En Route" if telemetry["status"]["armed"] else "Idle",
+                "connectionType":drone.transport,
                 "position": telemetry["position"],
                 "navigation": {
                     "groundSpeed": telemetry["navigation"]["groundSpeed"],
@@ -135,7 +137,6 @@ def get_telemetry_data():
                     "rssi": telemetry["communication"]["rssi"],
                     "linkStatus": drone.transport,
                     "packetLoss": telemetry["communication"]["packetLoss"],
-                    "transport": drone.transport,
                     "dataAge": round(data_age, 2),
                     "quality": "Stale" if data_age > STALE_AFTER_SECONDS else "Live",
                     "lastUpdate": datetime.now().isoformat()
