@@ -15,6 +15,7 @@ class TelemetryManager {
             armed: false,
             flightMode: 'Stabilize',
             missionStatus: 'Idle',
+            connectionType: 'WiFi', //default -->wifi
             position: { lat: 37.7749, lng: -122.4194, alt: 42, heading: 127 },
             navigation: { groundSpeed: 8.4, distanceFromHome: 312 },
             attitude: { roll: 2, pitch: -5, yaw: 127 },
@@ -314,6 +315,7 @@ class DashboardRenderer {
             armedBadge: document.getElementById('armedBadge'),
             modeBadge: document.getElementById('modeBadge'),
             missionBadge: document.getElementById('missionBadge'),
+            connectionType: document.getElementById('connectionType'),
             lastUpdateTime: document.getElementById('lastUpdateTime'),
             
             altitude: document.getElementById('altitude'),
@@ -500,6 +502,10 @@ class DashboardRenderer {
         this.elements.modeBadge.textContent = isConnected ? (data.flightMode || 'Stabilize') : 'Offline';
         this.elements.modeBadge.className = `badge ${isConnected ? 'badge-blue' : 'badge-gray'}`;
         
+        const connectionType = isConnected ? (data.connectionType || 'WIFI') : 'None';
+        this.elements.connectionType.textContent = connectionType;
+        this.elements.connectionType.style.color = isConnected ? '#0f172a' : '#94a3b8';
+
         const missionBadge = this.elements.missionBadge;
         const missionStatus = isConnected ? (data.missionStatus || 'Idle') : 'Unknown';
         missionBadge.textContent = missionStatus;
