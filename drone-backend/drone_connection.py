@@ -44,7 +44,7 @@ class DroneConnection:
             
             self.is_connected = True
             self.connection_string = connection_string
-            self.transport = self._get_connection_type(connection_string)  # ✅ Updated method name
+            self.transport = self._get_connection_type(connection_string)  
             self.last_heartbeat_time = time.time()  # Initialize heartbeat clock
             
             # Force the Pixhawk stream rate limits immediately over serial interface links
