@@ -636,15 +636,28 @@ class DashboardRenderer {
             let healthClass = 'badge badge-gray';
             
             if (isConnected) {
-                if (percent > 75) {
-                    healthText = 'Excellent';
-                    healthClass = 'badge badge-green';
-                } else if (percent > 30) {
-                    healthText = 'Healthy';
-                    healthClass = 'badge badge-green';
+                // Use health from backend if available
+                if (batt?.health) {
+                    healthText = batt.health;
+                    if (healthText === 'Excellent' || healthText === 'Healthy') {
+                        healthClass = 'badge badge-green';
+                    } else if (healthText === 'Low') {
+                        healthClass = 'badge badge-amber';
+                    } else if (healthText === 'Critical') {
+                        healthClass = 'badge badge-red';
+                    }
                 } else {
-                    healthText = 'Low Battery';
-                    healthClass = 'badge badge-red';
+                    // Fallback health calculation
+                    if (percent > 75) {
+                        healthText = 'Excellent';
+                        healthClass = 'badge badge-green';
+                    } else if (percent > 30) {
+                        healthText = 'Healthy';
+                        healthClass = 'badge badge-green';
+                    } else {
+                        healthText = 'Low Battery';
+                        healthClass = 'badge badge-red';
+                    }
                 }
             }
             
@@ -671,10 +684,26 @@ class DashboardRenderer {
                 : '0';
         }
         
+        // ✅ FIXED: Show friendly message when idle
         if (this.elements.flightTimeLeft) {
-            this.elements.flightTimeLeft.textContent = (isConnected && typeof batt?.timeLeft === 'number') 
-                ? Math.max(0, batt.timeLeft).toFixed(0) 
-                : '0';
+            if (isConnected && typeof batt?.timeLeft === 'number') {
+                if (batt.timeLeft > 0) {
+                    // Drone is flying - show time
+                    this.elements.flightTimeLeft.textContent = batt.timeLeft.toFixed(0);
+                    // Remove any "idle" styling
+                    this.elements.flightTimeLeft.style.color = '';
+                    this.elements.flightTimeLeft.style.fontSize = '';
+                } else {
+                    // Drone is idle - show "Idle" or "--"
+                    this.elements.flightTimeLeft.textContent = 'Idle';
+                    this.elements.flightTimeLeft.style.color = '#94a3b8';
+                    this.elements.flightTimeLeft.style.fontSize = '1rem';
+                }
+            } else {
+                this.elements.flightTimeLeft.textContent = '--';
+                this.elements.flightTimeLeft.style.color = '#94a3b8';
+                this.elements.flightTimeLeft.style.fontSize = '1rem';
+            }
         }
     }
     
