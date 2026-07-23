@@ -101,22 +101,54 @@ def get_telemetry_data():
     if drone.is_connected_to_drone():
         try:
             telemetry = drone.get_telemetry()
-            percent = telemetry["battery"]["percent"]
-            consumed = telemetry["battery"].get("consumedMah")
-            if BATTERY_CAPACITY_MAH and consumed is not None:
-                capacity_left = max(0, BATTERY_CAPACITY_MAH - consumed)
+            battery = telemetry.get("battery", {})
+            
+            # Get raw battery data
+            percent = battery.get("percent", 0)
+            voltage = battery.get("voltage", 0)
+            current = battery.get("current", 0)
+            consumed = battery.get("consumedMah", 0)
+            capacity_remaining = battery.get("capacityRemaining", 0)
+            
+            # ✅ FIXED: Use REAL consumed capacity for percentage
+            if BATTERY_CAPACITY_MAH > 0 and consumed is not None and consumed > 0:
+                # Calculate REAL percentage from consumed capacity
+                real_percent = max(0, min(100, (1 - (consumed / BATTERY_CAPACITY_MAH)) * 100))
+                real_percent = round(real_percent, 1)
+                
+                # Calculate REAL capacity remaining
+                real_capacity_left = max(0, BATTERY_CAPACITY_MAH - consumed)
             else:
-                capacity_left = round(BATTERY_CAPACITY_MAH * percent / 100)
-            current = telemetry["battery"]["current"]
-            time_left = round((capacity_left / 1000) / current * 60) if capacity_left and current > 0 else 0
+                # Fallback to voltage-based percentage if no consumed data
+                real_percent = percent
+                real_capacity_left = round(BATTERY_CAPACITY_MAH * percent / 100) if BATTERY_CAPACITY_MAH > 0 else 0
+            
+            # ✅ Calculate flight time only when actually flying
+            MIN_FLIGHT_CURRENT = 0.5  # Amps - ignore idle current
+            if real_capacity_left > 0 and current > MIN_FLIGHT_CURRENT:
+                # Convert capacity to Ah, divide by current (A), multiply by 60 for minutes
+                time_left = round((real_capacity_left / 1000) / current * 60, 1)
+            else:
+                time_left = 0  # Idle or not enough current
+            
+            # ✅ Health based on REAL percentage
+            if real_percent > 30:
+                health = "Healthy"
+            elif real_percent > 15:
+                health = "Low"
+            else:
+                health = "Critical"
+            
+            # ✅ Calculate data age
             data_age = max(0.0, time.time() - drone.last_heartbeat_time)
+            
             return {
                 "droneId": DRONE_ID,
                 "connectionStatus": "Connected",
                 "armed": telemetry["status"]["armed"],
                 "flightMode": telemetry["status"]["mode"],
                 "missionStatus": "En Route" if telemetry["status"]["armed"] else "Idle",
-                "connectionType":drone.transport,
+                "connectionType": drone.transport,
                 "position": telemetry["position"],
                 "navigation": {
                     "groundSpeed": telemetry["navigation"]["groundSpeed"],
@@ -125,12 +157,13 @@ def get_telemetry_data():
                 "attitude": telemetry["attitude"],
                 "gps": telemetry["gps"],
                 "battery": {
-                    "percent": telemetry["battery"]["percent"],
-                    "voltage": telemetry["battery"]["voltage"],
-                    "current": telemetry["battery"]["current"],
-                    "capacity": capacity_left,
-                    "timeLeft": time_left,
-                    "health": "Healthy" if telemetry["battery"]["percent"] > 20 else "Critical"
+                    "percent": real_percent,  # ✅ REAL percentage from consumed mAh
+                    "voltage": round(voltage, 2),
+                    "current": round(current, 1),
+                    "capacity": round(real_capacity_left, 0),  # ✅ REAL capacity remaining
+                    "timeLeft": time_left,  # ✅ 0 when idle, real minutes when flying
+                    "health": health,
+                    "consumedMah": consumed if consumed > 0 else 0  # For debugging
                 },
                 "charging": charging_telemetry.model_dump(),
                 "communication": {
@@ -144,11 +177,13 @@ def get_telemetry_data():
             }
         except Exception as e:
             print(f" Error extracting telemetry dictionary: {e}")
-            #  FIXED: Instantly short-circuit here if data parsing fails
+            # Fall through to disconnected state
             
+    # Return disconnected state
     disconnected_data = deepcopy(DISCONNECTED_TELEMETRY_TEMPLATE)
     disconnected_data["charging"] = charging_telemetry.model_dump()
     disconnected_data["communication"]["lastUpdate"] = datetime.now().isoformat()
+    disconnected_data["communication"]["linkStatus"] = "Disconnected"
     return disconnected_data
 
 

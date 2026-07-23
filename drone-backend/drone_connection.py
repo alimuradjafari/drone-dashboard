@@ -14,7 +14,16 @@ class DroneConnection:
         self.is_connected = False
         self.telemetry = {
             "position": {"lat": 0.0, "lng": 0.0, "alt": 0.0, "heading": 0.0},
-            "battery": {"voltage": 0.0, "current": 0.0, "percent": 0, "consumedMah": None},
+            "battery": {
+                "voltage": 0.0, 
+                "current": 0.0, 
+                "percent": 0, 
+                "consumedMah": 0,
+                "capacityRemaining": 0,
+                "capacityFull": 5000,  # Default to 5000mAh
+                "flightTimeMinutes": 0,
+                "status": "idle"
+            },
             "status": {"armed": False, "mode": "Unknown"},
             "gps": {"fixType": "No Fix", "satellites": 0, "hdop": 0.0},
             "attitude": {"roll": 0.0, "pitch": 0.0, "yaw": 0.0},
@@ -158,59 +167,132 @@ class DroneConnection:
         self.telemetry["navigation"]["distanceFromHome"] = float(getattr(msg, 'wp_dist', 0.0))
     
     def _process_battery(self, msg):
+        """
+        Process battery messages from MAVLink.
+        Handles both SYS_STATUS and BATTERY_STATUS messages.
+        Uses current integration for accurate battery tracking.
+        """
+        # Debug print to see raw data
         print({
-                "type": msg.get_type(),
-                "battery_remaining": getattr(msg, "battery_remaining", None),
-                "current_consumed": getattr(msg, "current_consumed", None),
-                "voltage_battery": getattr(msg, "voltage_battery", None),
-                "voltages": getattr(msg, "voltages", None),
-            })
-        
+            "type": msg.get_type(),
+            "battery_remaining": getattr(msg, "battery_remaining", None),
+            "current_consumed": getattr(msg, "current_consumed", None),
+            "voltage_battery": getattr(msg, "voltage_battery", None),
+            "voltages": getattr(msg, "voltages", None),
+            "current_battery": getattr(msg, "current_battery", None),
+        })
         
         msg_type = msg.get_type()
-        previous = self.telemetry["battery"]
-        voltage = previous["voltage"]
-        current = previous["current"]
-        percent = previous["percent"]
-
-        # Never replace a valid reading with MAVLink's unavailable sentinels.
+        previous = self.telemetry.get("battery", {})
+        
+        # Initialize with previous values or defaults
+        voltage = previous.get("voltage", 0.0)
+        current = previous.get("current", 0.0)
+        percent = previous.get("percent", 0)
+        consumed_mah = previous.get("consumedMah", 0)
+        
+        # Process SYS_STATUS message
         if msg_type == 'SYS_STATUS':
             raw_voltage = getattr(msg, 'voltage_battery', 65535)
-            if 0 < raw_voltage < 65535:
+            if raw_voltage is not None and 0 < raw_voltage < 65535:
                 voltage = raw_voltage / 1000.0
-        elif msg_type == 'BATTERY_STATUS':
-            # BATTERY_STATUS contains per-cell voltages. Unused cells are 65535.
-            cells = [value for value in getattr(msg, 'voltages', []) if 0 < value < 65535]
-            cells.extend(value for value in getattr(msg, 'voltages_ext', []) if 0 < value < 65535)
-            if cells:
-                voltage = sum(cells) / 1000.0
-        else:
-            return
-
-        raw_current = getattr(msg, 'current_battery', -1)
-        if raw_current >= 0:
-            current = raw_current / 100.0
-
-        # Prefer the flight controller's calibrated estimate. Voltage-only pack
-        # estimation is chemistry/cell-count dependent and causes unstable values.
-        raw_percent = getattr(msg, 'battery_remaining', -1)
-        if raw_percent >= 0:
-            percent = raw_percent
-
-        raw_consumed = getattr(msg, "current_consumed", -1)
-
-        if raw_consumed >= 0:
-            consumed_mah = raw_consumed
-        else:
-            consumed_mah = previous.get("consumedMah")
+                print(f"✅ Voltage from SYS_STATUS: {voltage}V")
             
+            raw_percent = getattr(msg, 'battery_remaining', -1)
+            if raw_percent >= 0:
+                percent = raw_percent
+        
+        # Process BATTERY_STATUS message
+        elif msg_type == 'BATTERY_STATUS':
+            # Get voltage from cell voltages
+            voltages = getattr(msg, 'voltages', [])
+            if voltages and len(voltages) > 0:
+                valid_cells = [v for v in voltages if v is not None and 0 < v < 65535]
+                if valid_cells:
+                    # Check if values are in Volts or millivolts
+                    if all(v < 30 for v in valid_cells):
+                        voltage = sum(valid_cells)  # Already in Volts
+                    else:
+                        voltage = sum(valid_cells) / 1000.0  # Convert mV to V
+                    print(f"✅ Voltage from BATTERY_STATUS cells: {voltage}V")
+            
+            # Get current draw
+            raw_current = getattr(msg, 'current_battery', -1)
+            if raw_current >= 0:
+                current = raw_current / 100.0
+                print(f"✅ Current: {current}A")
+            
+            # Get consumed capacity
+            raw_consumed = getattr(msg, "current_consumed", -1)
+            if raw_consumed >= 0:
+                consumed_mah = raw_consumed
+                print(f"✅ Consumed capacity updated: {consumed_mah} mAh")
+            
+            # Get battery percentage (fallback)
+            raw_percent = getattr(msg, 'battery_remaining', -1)
+            if raw_percent >= 0:
+                percent = raw_percent
+        
+        # ✅ DETECT BATTERY PRESENCE
+        # If voltage is below threshold, battery is not connected
+        BATTERY_CONNECTED_THRESHOLD = 3.0  # Volts
+        if voltage < BATTERY_CONNECTED_THRESHOLD:
+            print(f"⚠️ Battery voltage too low ({voltage}V < {BATTERY_CONNECTED_THRESHOLD}V) - assuming battery is disconnected")
+            self.telemetry["battery"] = {
+                "voltage": 0.0,
+                "current": 0.0,
+                "percent": 0,
+                "consumedMah": 0,
+                "capacityRemaining": 0,
+                "capacityFull": 5000,
+                "flightTimeMinutes": 0,
+                "status": "no_battery"
+            }
+            return  # Stop processing - no battery connected
+        
+        # ✅ Calculate REAL values using current integration
+        from config import BATTERY_CAPACITY_MAH
+        FULL_CAPACITY_MAH = BATTERY_CAPACITY_MAH if BATTERY_CAPACITY_MAH > 0 else 5000
+        
+        # Calculate REAL capacity remaining from consumed capacity
+        if consumed_mah > 0:
+            capacity_remaining = max(0, FULL_CAPACITY_MAH - consumed_mah)
+            real_percent = max(0, min(100, (1 - (consumed_mah / FULL_CAPACITY_MAH)) * 100))
+            real_percent = round(real_percent, 1)
+        else:
+            capacity_remaining = round(FULL_CAPACITY_MAH * percent / 100) if percent > 0 else 0
+            real_percent = percent
+        
+        # Calculate flight time only when actually flying
+        MIN_CURRENT_FOR_CALCULATION = 0.5
+        flight_time_minutes = 0
+        
+        if current > MIN_CURRENT_FOR_CALCULATION and capacity_remaining > 0:
+            current_ma = current * 1000
+            flight_time_minutes = (capacity_remaining / current_ma) * 60
+            flight_time_minutes = round(flight_time_minutes, 1)
+        
+        # Determine battery status
+        if current <= MIN_CURRENT_FOR_CALCULATION:
+            status = "idle"
+        elif flight_time_minutes > 0:
+            status = "flying"
+        else:
+            status = "estimating"
+        
+        # Update telemetry with REAL values
         self.telemetry["battery"] = {
             "voltage": round(max(0.0, voltage), 2),
             "current": round(max(0.0, current), 1),
-            "percent": int(max(0, min(100, percent))),
-            "consumedMah": consumed_mah
+            "percent": int(max(0, min(100, real_percent))),
+            "consumedMah": consumed_mah if consumed_mah > 0 else 0,
+            "capacityRemaining": round(capacity_remaining, 0) if capacity_remaining > 0 else 0,
+            "capacityFull": FULL_CAPACITY_MAH,
+            "flightTimeMinutes": flight_time_minutes,
+            "status": status
         }
-        
+    
+        print(f"📊 Final battery: {self.telemetry['battery']}")
     
     def _process_heartbeat(self, msg):
         is_armed = (msg.base_mode & mavutil.mavlink.MAV_MODE_FLAG_SAFETY_ARMED) != 0
