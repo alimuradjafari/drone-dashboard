@@ -10,7 +10,7 @@ def csv_setting(name, default):
 
 
 DRONE_ID = os.getenv("DRONE_ID", "Drone-001")
-CONNECTION_TARGETS = csv_setting("MAVLINK_CONNECTIONS", "udpin:0.0.0.0:14550,COM9")
+CONNECTION_TARGETS = csv_setting("MAVLINK_CONNECTIONS", "udp:192.168.137.70:14550,COM9")
 HEARTBEAT_TIMEOUT = float(os.getenv("MAVLINK_HEARTBEAT_TIMEOUT", "5"))
 CORS_ORIGINS = csv_setting("CORS_ORIGINS", "http://localhost:5500,http://127.0.0.1:5500")
 API_KEY = os.getenv("DASHBOARD_API_KEY", "")
