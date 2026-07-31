@@ -165,6 +165,12 @@ class DroneConnection:
         if not ready_event.wait(timeout=initial_timeout):
             details = self.last_error or f"No {requirement} received"
             print(f"MAVLink connection not established: {details}")
+            if connection_string.lower().startswith("udpin:"):
+                print(
+                    "Keeping passive UDP listener open while waiting for "
+                    "MAVLink traffic"
+                )
+                return False
             self.disconnect(quiet=True)
             return False
 
@@ -538,6 +544,11 @@ class DroneConnection:
                     self.is_connected = False
                 return False
         return connected
+
+    def is_endpoint_open(self) -> bool:
+        """Return whether a receiver is actively waiting for traffic."""
+        with self._lock:
+            return self.running and self.mav is not None
 
     def get_heartbeat_state(self) -> str:
         with self._lock:

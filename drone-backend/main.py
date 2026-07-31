@@ -264,6 +264,13 @@ async def reconnect_drone_task() -> None:
     while True:
         try:
             if not drone.is_connected_to_drone():
+                # A passive UDP listener must stay bound while the sender is
+                # offline. Reopening it on every initial timeout creates gaps
+                # in which incoming datagrams are silently dropped.
+                if drone.is_endpoint_open():
+                    await asyncio.sleep(RECONNECT_DELAY_SECONDS)
+                    continue
+
                 target = CONNECTION_TARGETS[target_index]
                 target_index = (target_index + 1) % len(CONNECTION_TARGETS)
                 print(f"Connection inactive. Trying: {target}")
