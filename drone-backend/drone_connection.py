@@ -7,6 +7,7 @@ telemetry can still be inspected when routing accidentally omits heartbeat.
 
 from __future__ import annotations
 
+import os
 from copy import deepcopy
 from datetime import datetime
 from math import atan2, cos, degrees, radians, sin, sqrt
@@ -14,6 +15,7 @@ import threading
 import time
 from typing import Any
 
+os.environ.setdefault("MAVLINK20", "1")
 from pymavlink import mavutil
 import serial
 
@@ -235,11 +237,19 @@ class DroneConnection:
 
             now = time.time()
             with self._lock:
+                was_connected = self.is_connected
                 self.last_packet_time = now
                 self.last_update = datetime.now()
                 self.last_message_type = message_type
                 self.packet_count += 1
                 self.is_connected = True
+
+            if not was_connected:
+                print(
+                    f"[MAVLink] Connected! Receiving live telemetry on "
+                    f"{self.connection_string}"
+                )
+
             self._first_packet_event.set()
 
             try:

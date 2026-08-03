@@ -8,8 +8,10 @@ from __future__ import annotations
 
 from collections import Counter
 import argparse
+import os
 import time
 
+os.environ["MAVLINK20"] = "1"
 from pymavlink import mavutil
 
 
