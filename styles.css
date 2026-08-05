@@ -626,6 +626,137 @@ body {
     font-variant-numeric: tabular-nums; /* Prevents text shifting when numbers change */
 }
 
+
+/* ============================================================
+   FLEET UI STYLES
+   ============================================================ */
+
+/* Topbar center column for fleet pills */
+.topbar-center {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+    flex: 1;
+    justify-content: center;
+    padding: 0 8px;
+}
+
+/* ---- Fleet Summary Bar ---- */
+.fleet-summary-bar {
+    display: none; /* shown via JS when >1 drone */
+    align-items: center;
+    gap: 0;
+    background: var(--color-background-primary);
+    border: 1px solid var(--color-border-primary);
+    border-radius: var(--border-radius-md);
+    padding: 6px 16px;
+    box-shadow: var(--shadow-sm);
+    flex-wrap: wrap;
+}
+
+.fleet-stat {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 18px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--color-text-primary);
+    border-right: 1px solid var(--color-border-primary);
+}
+
+.fleet-stat:last-child { border-right: none; }
+
+.fleet-stat i {
+    font-size: 15px;
+    color: var(--color-text-info);
+}
+
+.fleet-stat-label {
+    font-size: 11px;
+    font-weight: 400;
+    color: var(--color-text-secondary);
+}
+
+.fleet-stat-crit i,
+.fleet-stat-crit span:first-of-type {
+    color: var(--color-text-danger) !important;
+}
+
+/* ---- Fleet Drone Pills ---- */
+.fleet-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 4px 10px;
+    border-radius: 20px;
+    border: 1.5px solid var(--color-border-primary);
+    background: var(--color-background-secondary);
+    cursor: pointer;
+    font-family: var(--font-sans);
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--color-text-primary);
+    transition: all 0.2s ease;
+    white-space: nowrap;
+}
+
+.fleet-pill:hover {
+    border-color: var(--drone-color, var(--color-text-info));
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--drone-color, #0078c8) 15%, transparent);
+    transform: translateY(-1px);
+}
+
+.fleet-pill-active {
+    background: color-mix(in srgb, var(--drone-color, #0078c8) 12%, white);
+    border-color: var(--drone-color, var(--color-text-info)) !important;
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--drone-color, #0078c8) 20%, transparent);
+}
+
+.fleet-pill-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.fleet-pill-name {
+    font-weight: 600;
+}
+
+.fleet-pill-batt {
+    font-size: 11px;
+    padding: 1px 5px;
+    border-radius: 10px;
+    background: var(--color-background-success);
+    color: var(--color-text-success);
+    font-weight: 600;
+}
+
+.fleet-pill-batt.batt-warn {
+    background: var(--color-background-warning);
+    color: var(--color-text-warning);
+}
+
+.fleet-pill-batt.batt-crit {
+    background: var(--color-background-danger);
+    color: var(--color-text-danger);
+    animation: pulse-danger 1.2s ease-in-out infinite;
+}
+
+@keyframes pulse-danger {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
+
+.fleet-pill-status {
+    font-size: 10px;
+}
+
+.conn-ok { color: var(--color-text-success); }
+.conn-err { color: var(--color-text-danger); }
+
 @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after {
         animation-duration: 0.01ms !important;
