@@ -26,6 +26,7 @@ import uvicorn
 from config import (
     API_KEY,
     BATTERY_CAPACITY_MAH,
+    CHARGING_STALE_AFTER_SECONDS,
     CONNECTION_TARGETS,
     CORS_ORIGINS,
     DRONE_ID,
@@ -133,10 +134,29 @@ class ChargingTelemetry(BaseModel):
 
 
 charging_telemetry = ChargingTelemetry()
+charging_last_update: float | None = None
 latest_telemetry = deepcopy(DISCONNECTED_TELEMETRY_TEMPLATE)
 latest_fleet: dict[str, dict] = {}
 active_connections: list[WebSocket] = []
 fleet_connections: list[WebSocket] = []
+
+
+def get_charging_data() -> dict:
+    """Return station telemetry with freshness metadata."""
+    payload = charging_telemetry.model_dump()
+    if charging_last_update is None:
+        return {**payload, "online": False, "status": "Offline", "lastUpdate": None}
+
+    age = max(0.0, time.time() - charging_last_update)
+    online = age <= CHARGING_STALE_AFTER_SECONDS
+    if not online:
+        payload.update({"docked": False, "status": "Offline"})
+    return {
+        **payload,
+        "online": online,
+        "lastUpdate": datetime.fromtimestamp(charging_last_update).isoformat(),
+        "dataAge": round(age, 2),
+    }
 
 
 def _battery_health(percent: float, battery_status: str) -> str:
@@ -190,7 +210,7 @@ def get_telemetry_data() -> dict:
                     "status": battery_status,
                     "consumedMah": consumed,
                 },
-                "charging": charging_telemetry.model_dump(),
+                "charging": get_charging_data(),
                 "communication": {
                     "rssi": drone_data.get("communication", {}).get("rssi", 0),
                     "linkStatus": drone_data.get("connectionType", "WIFI"),
@@ -205,7 +225,7 @@ def get_telemetry_data() -> dict:
     # Fallback: disconnected payload
     diag = drone.get_diagnostics()
     disconnected = deepcopy(DISCONNECTED_TELEMETRY_TEMPLATE)
-    disconnected["charging"] = charging_telemetry.model_dump()
+    disconnected["charging"] = get_charging_data()
     disconnected["communication"].update({
         "heartbeatStatus": diag.get("heartbeatStatus", "Missing"),
         "lastUpdate": datetime.now().isoformat(),
@@ -219,7 +239,7 @@ def get_fleet_payload() -> dict:
     summary = drone.get_fleet_summary(fleet)
     # Enrich each drone with charging data
     for d in fleet.values():
-        d["charging"] = charging_telemetry.model_dump()
+        d["charging"] = get_charging_data()
         d["missionStatus"] = "En Route" if d.get("armed") else "Idle"
     return {"summary": summary, "drones": fleet}
 
@@ -377,11 +397,12 @@ async def fleet_websocket_endpoint(
 
 @app.put("/api/charging", dependencies=[Depends(require_api_key)])
 async def update_charging(payload: ChargingTelemetry) -> dict:
-    global charging_telemetry
+    global charging_telemetry, charging_last_update
     charging_telemetry = payload
+    charging_last_update = time.time()
     return {
         "status": "updated",
-        "charging": payload.model_dump(),
+        "charging": get_charging_data(),
     }
 
 

@@ -86,6 +86,9 @@ CORS_ORIGINS = csv_setting(
     "http://localhost:5500,http://127.0.0.1:5500",
 )
 API_KEY = os.getenv("DASHBOARD_API_KEY", "")
+CHARGING_STALE_AFTER_SECONDS = float_setting("CHARGING_STALE_AFTER", 5.0)
+if CHARGING_STALE_AFTER_SECONDS <= 0:
+    raise ValueError("CHARGING_STALE_AFTER must be greater than zero")
 BATTERY_CAPACITY_MAH = max(0, int_setting("BATTERY_CAPACITY_MAH", 5000))
 
 if INITIAL_PACKET_TIMEOUT <= 0:

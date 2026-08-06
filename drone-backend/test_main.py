@@ -1,5 +1,6 @@
 import unittest
 from unittest.mock import patch
+import time
 
 import main
 from fastapi import HTTPException
@@ -34,6 +35,22 @@ class TelemetryTests(unittest.TestCase):
             with self.assertRaises(HTTPException):
                 main.require_api_key("wrong")
             self.assertIsNone(main.require_api_key("secret"))
+
+    def test_charging_data_becomes_offline_when_stale(self):
+        with (
+            patch.object(main, "charging_last_update", time.time() - 10),
+            patch.object(main, "CHARGING_STALE_AFTER_SECONDS", 5),
+        ):
+            payload = main.get_charging_data()
+        self.assertFalse(payload["online"])
+        self.assertFalse(payload["docked"])
+        self.assertEqual(payload["status"], "Offline")
+
+    def test_charging_data_is_online_after_update(self):
+        with patch.object(main, "charging_last_update", time.time()):
+            payload = main.get_charging_data()
+        self.assertTrue(payload["online"])
+        self.assertIsNotNone(payload["lastUpdate"])
 
 
 if __name__ == "__main__":
