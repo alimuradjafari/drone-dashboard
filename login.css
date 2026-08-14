@@ -1,0 +1,66 @@
+body {
+  margin: 0;
+  padding: 0;
+  background-color: #e8ecf2; /* Deep tactical dark blue/black background */
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  overflow: hidden;
+}
+
+#droneCanvas {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: -1; /* Keeps the particle mesh behind the login window */
+}
+
+.login-wrapper {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 100vh;
+  position: relative;
+  z-index: 1;
+}
+
+.login-box {
+  background: rgba(232, 236, 242, 0.85) ; /* Semi-transparent dark overlay */
+  border: 1px solid rgba(0, 210, 255, 0.3); /* Tech cyan border outline */
+  box-shadow: 0 0 30px rgba(3, 215, 255, 0.15); /* Soft data glow */
+  padding: 40px;
+  border-radius: 6px;
+  color: rgb(10, 20, 38);
+  width: 190px;
+  text-align: center;
+  backdrop-filter: blur(10px); /* Blurs the moving particles behind the box */
+  transition: background 1.15s ease, opacity 1.15s ease;
+}
+
+.account{
+    font-size: 12px;
+}
+a{
+    text-decoration: none;
+    color: rgb(10, 20, 38);
+}
+
+a:hover{
+    color: white;
+    font-weight: bold;
+}
+
+.login-box:hover{
+    background: rgba(3, 215, 255, 0.4);
+    opacity: 0.9;
+}
+
+.form-contianer{
+    width: 400px;
+    height: 500px;
+    background-color: red;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    flex-direction: center;
+}

@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DDCS | Login</title>
+    <link rel="stylesheet" href="login.css">
+</head>
+<body>
+    <!-- The animation canvas wrapper -->
+    <canvas id="droneCanvas"></canvas>
+
+    <!-- The centered login form layer -->
+    <div class="login-wrapper">
+    <div class="login-box">
+        <h2>Login</h2>
+        <p>Authentication Required</p>
+        <form action="">
+            <input type="email" placeholder="Enter your email">
+            <input type="password" placeholder="Enter your password">
+            <a href="index.html">Login</a>
+        </form>
+        <p class="account">Don't have account? | <a href="create_account.html">Create</a></p>
+        <!-- Your login fields go here -->
+    </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('droneCanvas');
+            const ctx = canvas.getContext('2d');
+
+            // Global engine configuration variables
+            let particles = [];
+            const particleCount = 80; // Total number of "drones" on screen
+            const connectionDistance = 120; // Max pixel distance to draw a line between nodes
+
+            // Setup responsive fullscreen scaling
+            function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            }
+            window.addEventListener('resize', resizeCanvas);
+            resizeCanvas();
+
+            // Blueprint for individual drone node objects
+            class DroneNode {
+            constructor() {
+                this.x = Math.random() * canvas.width;
+                this.y = Math.random() * canvas.height;
+                // Speed variables (adjust values to make flight faster/slower)
+                this.vx = (Math.random() - 0.5) * 0.8; 
+                this.vy = (Math.random() - 0.5) * 0.8;
+                this.radius = Math.random() * 2 + 1.5; // Node sizing
+            }
+
+            // Update drone position and bounce off screen boundaries
+            update() {
+                this.x += this.vx;
+                this.y += this.vy;
+
+                if (this.x < 0 || this.x > canvas.width) this.vx *= -1;
+                if (this.y < 0 || this.y > canvas.height) this.vy *= -1;
+            }
+
+            // Draw the core drone node point
+            draw() {
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+                ctx.fillStyle = 'rgba(0, 210, 255, 0.7)'; // Vibrant telemetry cyan
+                ctx.fill();
+            }
+            }
+
+            // Generate the initial fleet array
+            function init() {
+            particles = [];
+            for (let i = 0; i < particleCount; i++) {
+                particles.push(new DroneNode());
+            }
+            }
+
+            // Continuous calculation and animation render loop
+            function animate() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // 1. Move and draw each individual node
+            particles.forEach(p => {
+                p.update();
+                p.draw();
+            });
+
+            // 2. Scan distances and draw network line links
+            for (let i = 0; i < particles.length; i++) {
+                for (let j = i + 1; j < particles.length; j++) {
+                const dx = particles[i].x - particles[j].x;
+                const dy = particles[i].y - particles[j].y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+
+                // Draw connection line if nodes are within specified proximity boundary
+                if (distance < connectionDistance) {
+                    // Line transparency scales based on how close the drones are
+                    const alpha = (1 - distance / connectionDistance) * 0.25;
+                    ctx.beginPath();
+                    ctx.moveTo(particles[i].x, particles[i].y);
+                    ctx.lineTo(particles[j].x, particles[j].y);
+                    ctx.strokeStyle = `rgba(0, 210, 255, ${alpha})`;
+                    ctx.lineWidth = 0.8;
+                    ctx.stroke();
+                }
+                }
+            }
+
+            requestAnimationFrame(animate);
+            }
+
+            // Execute the animation engine
+            init();
+            animate();
+    </script>
+</body>
+</html>

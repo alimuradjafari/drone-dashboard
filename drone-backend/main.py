@@ -313,8 +313,7 @@ app.add_middleware(
 @app.websocket("/ws/telemetry")
 async def websocket_endpoint(
     websocket: WebSocket,
-    token: str | None = Query(default=None),
-) -> None:
+    token: str | None = Query(default=None),) -> None:
     if API_KEY and token != API_KEY:
         await websocket.close(code=1008, reason="Invalid API key")
         return
