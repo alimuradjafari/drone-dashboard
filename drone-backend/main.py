@@ -8,6 +8,9 @@ from copy import deepcopy
 from datetime import datetime
 import json
 import time
+from database import create_tables
+import models  # noqa: F401 — registers tables with SQLAlchemy Base
+from auth_routes import router as auth_router
 
 from fastapi import (
     Depends,
@@ -280,9 +283,9 @@ async def update_telemetry_loop() -> None:
             print(f"Telemetry update loop error: {exc}")
             await asyncio.sleep(0.2)
 
-
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    await create_tables()
     print(f"Starting MAVLink fleet backend — {len(CONNECTION_TARGETS)} target(s)")
     print(f"Targets: {', '.join(CONNECTION_TARGETS)}")
     # One reconnect task PER target so COM6 + COM9 + UDP all run in parallel
@@ -301,9 +304,14 @@ app = FastAPI(
     title="Drone Telemetry API (MAVLink)",
     lifespan=lifespan,
 )
+
+app.include_router(auth_router)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=CORS_ORIGINS,
+    # Authentication uses a bearer token rather than browser cookies, so a
+    # wildcard is safe here and also supports LAN-hosted dashboard pages.
+    allow_origins=["*"],
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],

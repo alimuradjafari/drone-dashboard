@@ -19,17 +19,17 @@
             <div class="input-group">
                 <div class="input-field" id="nameField">
                     <i class="fa-solid fa-user"></i>
-                    <input type="text" placeholder="Name">
+                    <input type="text" placeholder="Name" id="nameInput" required>
                 </div>
 
                 <div class="input-field">
                     <i class="fa-solid fa-envelope"></i>
-                    <input type="email" placeholder="Email">
+                    <input type="email" placeholder="Email" id="emailInput" required>
                 </div>
 
                 <div class="input-field">
                     <i class="fa-solid fa-lock"></i>
-                    <input type="password" placeholder="password">
+                    <input type="password" placeholder="password" id="passwordInput" required>
                 </div>
                 <p>Lost your account <a href="#">Click here!</a></p>
             </div>
@@ -46,22 +46,71 @@
         let signinBtn = document.getElementById("signinBtn");
         let nameField = document.getElementById("nameField");
         let title = document.getElementById("title");
+        const backendHost = window.location.hostname || 'localhost';
+        const authApiUrl = `http://${backendHost}:8002/api/auth`;
 
-        signinBtn.onclick = function(){
-            nameField.style.maxHeight = "0";
-            title.innerHTML = "Sign In";
-            signupBtn.classList.add("disable");
-            signinBtn.classList.remove("disable");
-
+        async function postAuth(path, body) {
+            try {
+                const res = await fetch(`${authApiUrl}/${path}`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(body)
+                });
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok) {
+                    throw new Error(data.detail || `${path === 'signup' ? 'Signup' : 'Login'} failed`);
+                }
+                return data;
+            } catch (error) {
+                alert(error instanceof TypeError
+                    ? `Cannot reach ${authApiUrl}. ${error.message}`
+                    : error.message);
+                return null;
+            }
         }
 
-        signupBtn.onclick = function(){
-            nameField.style.maxHeight = "60px";
-            title.innerHTML = "Sign Up";
-            signupBtn.classList.remove("disable");
-            signinBtn.classList.add("disable");
+        signupBtn.onclick = async function() {
+            if (signupBtn.classList.contains('disable')) {
+                // Just toggle UI to sign-up mode
+                nameField.style.maxHeight = "60px";
+                title.innerHTML = "Sign Up";
+                signupBtn.classList.remove("disable");
+                signinBtn.classList.add("disable");
+                return;
+            }
+            // Actually submit signup
+            const data = await postAuth('signup', {
+                name: document.getElementById('nameInput').value,
+                email: document.getElementById('emailInput').value,
+                password: document.getElementById('passwordInput').value,
+            });
+            if (data) {
+                localStorage.setItem('authToken', data.token);
+                localStorage.setItem('userName', data.user.name);
+                window.location.href = 'index.html';
+            }
+        };
 
-        }
+        signinBtn.onclick = async function() {
+            if (signinBtn.classList.contains('disable')) {
+                // Just toggle UI to sign-in mode
+                nameField.style.maxHeight = "0";
+                title.innerHTML = "Sign In";
+                signupBtn.classList.add("disable");
+                signinBtn.classList.remove("disable");
+                return;
+            }
+            // Actually submit login
+            const data = await postAuth('login', {
+                email: document.getElementById('emailInput').value,
+                password: document.getElementById('passwordInput').value,
+            });
+            if (data) {
+                localStorage.setItem('authToken', data.token);
+                localStorage.setItem('userName', data.user.name);
+                window.location.href = 'index.html';
+            }
+        };
 
         const canvas = document.getElementById('droneCanvas');
             const ctx = canvas.getContext('2d');
