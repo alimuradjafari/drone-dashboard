@@ -6,6 +6,16 @@
     <title>DDCS | Login</title>
     <link rel="stylesheet" href="login.css">
     <script src="https://kit.fontawesome.com/234d2d077f.js" crossorigin="anonymous"></script>
+    <style>
+        .error-msg {
+            color: #ff4d4d;
+            font-size: 13px;
+            margin-top: 8px;
+            min-height: 18px;
+            text-align: center;
+            font-weight: 500;
+        }
+    </style>
 </head>
 <body>
     <!-- The animation canvas wrapper -->
@@ -15,7 +25,7 @@
     <div class="login-wrapper">
     <div class="login-box">
         <h1 id="title">Sign Up</h1>
-        <form>
+        <form id="authForm">
             <div class="input-group">
                 <div class="input-field" id="nameField">
                     <i class="fa-solid fa-user"></i>
@@ -29,12 +39,14 @@
 
                 <div class="input-field">
                     <i class="fa-solid fa-lock"></i>
-                    <input type="password" placeholder="password" id="passwordInput" required>
+                    <input type="password" placeholder="Password" id="passwordInput" required>
                 </div>
                 <p>Lost your account <a href="#">Click here!</a></p>
+                <p id="errorMessage" class="error-msg"></p>
             </div>
             <div class="btn-field">
-                <button type="button" id="signupBtn">Sign up</button>
+                <!-- Default active button is submit -->
+                <button type="submit" id="signupBtn">Sign up</button>
                 <button type="button" class="disable" id="signinBtn">Sign in</button>
             </div>
         </form>
@@ -42,14 +54,30 @@
     </div>
 
     <script>
+        let authForm = document.getElementById("authForm");
         let signupBtn = document.getElementById("signupBtn");
         let signinBtn = document.getElementById("signinBtn");
         let nameField = document.getElementById("nameField");
+        let nameInput = document.getElementById("nameInput");
         let title = document.getElementById("title");
+        let errorMessage = document.getElementById("errorMessage");
+        
         const backendHost = window.location.hostname || 'localhost';
         const authApiUrl = `http://${backendHost}:8002/api/auth`;
 
+        function clearInputs() {
+            document.getElementById('nameInput').value = '';
+            document.getElementById('emailInput').value = '';
+            document.getElementById('passwordInput').value = '';
+        }
+
+        function clearError() {
+            errorMessage.innerText = "";
+        }
+
         async function postAuth(path, body) {
+            clearError();
+
             try {
                 const res = await fetch(`${authApiUrl}/${path}`, {
                     method: 'POST',
@@ -58,88 +86,105 @@
                 });
                 const data = await res.json().catch(() => ({}));
                 if (!res.ok) {
+                    if (res.status === 400 || res.status === 409) {
+                        throw new Error(data.detail || "Email is already registered.");
+                    }
                     throw new Error(data.detail || `${path === 'signup' ? 'Signup' : 'Login'} failed`);
                 }
                 return data;
             } catch (error) {
-                alert(error instanceof TypeError
-                    ? `Cannot reach ${authApiUrl}. ${error.message}`
-                    : error.message);
+                if (error instanceof TypeError) {
+                    errorMessage.innerText = `Cannot reach ${authApiUrl}. Check server connection.`;
+                } else {
+                    errorMessage.innerText = error.message;
+                }
                 return null;
             }
         }
 
-        signupBtn.onclick = async function() {
+        // Toggle to Sign Up mode
+        signupBtn.onclick = function () {
             if (signupBtn.classList.contains('disable')) {
-                // Just toggle UI to sign-up mode
+                clearError();
+                clearInputs();
                 nameField.style.maxHeight = "60px";
+                nameInput.setAttribute("required", "true"); // Name is required for Sign Up
                 title.innerHTML = "Sign Up";
                 signupBtn.classList.remove("disable");
                 signinBtn.classList.add("disable");
-                return;
-            }
-            // Actually submit signup
-            const data = await postAuth('signup', {
-                name: document.getElementById('nameInput').value,
-                email: document.getElementById('emailInput').value,
-                password: document.getElementById('passwordInput').value,
-            });
-            if (data) {
-                localStorage.setItem('authToken', data.token);
-                localStorage.setItem('userName', data.user.name);
-                window.location.href = 'index.html';
+                
+                signupBtn.type = "submit";
+                signinBtn.type = "button";
             }
         };
 
-        signinBtn.onclick = async function() {
+        // Toggle to Sign In mode
+        signinBtn.onclick = function () {
             if (signinBtn.classList.contains('disable')) {
-                // Just toggle UI to sign-in mode
+                clearError();
+                clearInputs();
                 nameField.style.maxHeight = "0";
+                nameInput.removeAttribute("required"); // Name is NOT required for Sign In
                 title.innerHTML = "Sign In";
-                signupBtn.classList.add("disable");
                 signinBtn.classList.remove("disable");
-                return;
+                signupBtn.classList.add("disable");
+
+                signinBtn.type = "submit";
+                signupBtn.type = "button";
             }
-            // Actually submit login
-            const data = await postAuth('login', {
+        };
+
+        // Handle submission (Only triggers if all 'required' fields are filled!)
+        authForm.onsubmit = async function (e) {
+            e.preventDefault(); // Prevents page reload
+
+            const isSignUp = !signupBtn.classList.contains('disable');
+            const endpoint = isSignUp ? 'signup' : 'login';
+
+            const payload = {
                 email: document.getElementById('emailInput').value,
                 password: document.getElementById('passwordInput').value,
-            });
+            };
+
+            if (isSignUp) {
+                payload.name = document.getElementById('nameInput').value;
+            }
+
+            const data = await postAuth(endpoint, payload);
+
             if (data) {
                 localStorage.setItem('authToken', data.token);
                 localStorage.setItem('userName', data.user.name);
                 window.location.href = 'index.html';
+            } else {
+                clearInputs(); // Clear input fields on failure
             }
         };
 
+        // Canvas animation logic
         const canvas = document.getElementById('droneCanvas');
-            const ctx = canvas.getContext('2d');
+        const ctx = canvas.getContext('2d');
 
-            // Global engine configuration variables
-            let particles = [];
-            const particleCount = 80; // Total number of "drones" on screen
-            const connectionDistance = 120; // Max pixel distance to draw a line between nodes
+        let particles = [];
+        const particleCount = 80; // Total number of "drones" on screen
+        const connectionDistance = 120; // Max pixel distance to draw a line between nodes
 
-            // Setup responsive fullscreen scaling
-            function resizeCanvas() {
+        function resizeCanvas() {
             canvas.width = window.innerWidth;
             canvas.height = window.innerHeight;
-            }
-            window.addEventListener('resize', resizeCanvas);
-            resizeCanvas();
+        }
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
 
-            // Blueprint for individual drone node objects
-            class DroneNode {
+        class DroneNode {
             constructor() {
                 this.x = Math.random() * canvas.width;
                 this.y = Math.random() * canvas.height;
-                // Speed variables (adjust values to make flight faster/slower)
                 this.vx = (Math.random() - 0.5) * 0.8; 
                 this.vy = (Math.random() - 0.5) * 0.8;
-                this.radius = Math.random() * 2 + 1.5; // Node sizing
+                this.radius = Math.random() * 2 + 1.5;
             }
 
-            // Update drone position and bounce off screen boundaries
             update() {
                 this.x += this.vx;
                 this.y += this.vy;
@@ -148,60 +193,52 @@
                 if (this.y < 0 || this.y > canvas.height) this.vy *= -1;
             }
 
-            // Draw the core drone node point
             draw() {
                 ctx.beginPath();
                 ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
-                ctx.fillStyle = 'rgba(0, 210, 255, 0.7)'; // Vibrant telemetry cyan
+                ctx.fillStyle = 'rgba(0, 210, 255, 0.7)';
                 ctx.fill();
             }
-            }
+        }
 
-            // Generate the initial fleet array
-            function init() {
+        function init() {
             particles = [];
             for (let i = 0; i < particleCount; i++) {
                 particles.push(new DroneNode());
             }
-            }
+        }
 
-            // Continuous calculation and animation render loop
-            function animate() {
+        function animate() {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-            // 1. Move and draw each individual node
             particles.forEach(p => {
                 p.update();
                 p.draw();
             });
 
-            // 2. Scan distances and draw network line links
             for (let i = 0; i < particles.length; i++) {
                 for (let j = i + 1; j < particles.length; j++) {
-                const dx = particles[i].x - particles[j].x;
-                const dy = particles[i].y - particles[j].y;
-                const distance = Math.sqrt(dx * dx + dy * dy);
+                    const dx = particles[i].x - particles[j].x;
+                    const dy = particles[i].y - particles[j].y;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
 
-                // Draw connection line if nodes are within specified proximity boundary
-                if (distance < connectionDistance) {
-                    // Line transparency scales based on how close the drones are
-                    const alpha = (1 - distance / connectionDistance) * 0.25;
-                    ctx.beginPath();
-                    ctx.moveTo(particles[i].x, particles[i].y);
-                    ctx.lineTo(particles[j].x, particles[j].y);
-                    ctx.strokeStyle = `rgba(0, 210, 255, ${alpha})`;
-                    ctx.lineWidth = 0.8;
-                    ctx.stroke();
-                }
+                    if (distance < connectionDistance) {
+                        const alpha = (1 - distance / connectionDistance) * 0.25;
+                        ctx.beginPath();
+                        ctx.moveTo(particles[i].x, particles[i].y);
+                        ctx.lineTo(particles[j].x, particles[j].y);
+                        ctx.strokeStyle = `rgba(0, 210, 255, ${alpha})`;
+                        ctx.lineWidth = 0.8;
+                        ctx.stroke();
+                    }
                 }
             }
 
             requestAnimationFrame(animate);
-            }
+        }
 
-            // Execute the animation engine
-            init();
-            animate();
+        init();
+        animate();
     </script>
 </body>
 </html>

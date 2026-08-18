@@ -152,3 +152,12 @@ form a{
   background: rgba(240, 240, 240, 1);
   color: #0f0f0f;
 }
+
+.error-msg {
+    color: #ff4d4d;
+    font-size: 8px;
+    margin-top: 8px;
+    min-height: 18px; /* Holds space to prevent layout jump */
+    text-align: center;
+    font-weight: 500;
+}
