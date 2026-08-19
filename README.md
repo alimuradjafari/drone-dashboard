@@ -46,6 +46,11 @@ python mavlink_forwarder.py
 ```
 
 ## Screenshots
+<img width="1920" height="961" alt="log" src="https://github.com/user-attachments/assets/bd1e9f73-4b9f-460b-aa7a-6ad5ab7f9140" />
+<img width="1440" height="899" alt="dashb" src="https://github.com/user-attachments/assets/eb3d7c0f-498b-416a-afaf-7120422bce70" />
 
+<img width="1918" height="1021" alt="gps" src="https://github.com/user-attachments/assets/1feb81f1-4ef4-45cb-9ae8-d8858bfa0e2f" />
+
+<img width="1899" height="1023" alt="multi" src="https://github.com/user-attachments/assets/124eeee9-6355-4226-98d4-2474ce1bdb3f" />
 
 
