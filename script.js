@@ -1,7 +1,9 @@
-// ============================================================
-// DRONE CHARGING STATION DASHBOARD - MAIN JAVASCRIPT
-// ============================================================
 
+// DRONE CHARGING STATION DASHBOARD - MAIN JAVASCRIPT
+
+if (!localStorage.getItem('authToken')) {
+            window.location.replace('login.html');
+}
 /**
  * TELEMETRY DATA MANAGER
  * Handles WebSocket connection and data state
@@ -34,6 +36,7 @@ class TelemetryManager {
         this.updateInterval = null;
         this.batteryAlertLevel = null;
         this.linkAlertActive = false;
+        this.fleetOverride = false;  // When true, single-drone WS stops pushing data
         this.isSimulating = new URLSearchParams(window.location.search).get('demo') === '1';
         
         // Start simulation
@@ -86,7 +89,6 @@ class TelemetryManager {
                 console.log(' WebSocket connected successfully!');
                 this.isSimulating = false;
                 
-                // CRITICAL FIX: Kill the background simulation interval completely 
                 // to prevent deepMerge from erasing live backend fields.
                 if (this.updateInterval) {
                     clearInterval(this.updateInterval);
@@ -102,6 +104,10 @@ class TelemetryManager {
             
             this.ws.onmessage = (event) => {
                 try {
+                    // When fleet WS is active, skip single-drone WS updates
+                    // to prevent overwriting the selected drone's data
+                    if (this.fleetOverride) return;
+
                     const data = JSON.parse(event.data);
                     
                     // Update data wrapper dynamically while respecting backend flags
@@ -126,12 +132,12 @@ class TelemetryManager {
                     }
                     
                 } catch (error) {
-                    console.error('❌ Failed to parse WebSocket message:', error);
+                    console.error(' Failed to parse WebSocket message:', error);
                 }
             };
             
             this.ws.onclose = () => {
-                console.log('❌ WebSocket disconnected');
+                console.log(' WebSocket disconnected');
                 this.updateData({ 
                     connectionStatus: 'Disconnected',
                     communication: { linkStatus: 'Disconnected' }
@@ -147,15 +153,15 @@ class TelemetryManager {
             };
             
             this.ws.onerror = (error) => {
-                console.error('❌ WebSocket error:', error);
+                console.error(' WebSocket error:', error);
                 this.ws.close();
             };
         } catch (error) {
-            console.error('❌ WebSocket connection failed:', error);
+            console.error(' WebSocket connection failed:', error);
             // Remain disconnected in production; append ?demo=1 to enable simulation.
             if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
             this.reconnectTimer = setTimeout(() => {
-                console.log('🔄 Retrying connection...');
+                console.log(' Retrying connection...');
                 this.connectWebSocket(url);
             }, 5000);
         }
@@ -278,9 +284,7 @@ class TelemetryManager {
     }
 }
 
-// ============================================================
 // DASHBOARD RENDERER
-// ============================================================
 class DashboardRenderer {
     constructor(telemetry) {
         this.telemetry = telemetry;
@@ -412,7 +416,7 @@ class DashboardRenderer {
                 align-items: center;
                 justify-content: center;
                 font-size: 10px;
-            ">🏠</div>`,
+            ">Home</div>`,
             iconSize: [20, 20],
             iconAnchor: [10, 10]
         });
@@ -434,7 +438,7 @@ class DashboardRenderer {
                 align-items: center;
                 justify-content: center;
                 font-size: 10px;
-            ">⚡</div>`,
+            ">Station</div>`,
             iconSize: [20, 20],
             iconAnchor: [10, 10]
         });
@@ -684,7 +688,7 @@ class DashboardRenderer {
                 : '0';
         }
         
-        // ✅ FIXED: Show friendly message when idle
+        //Show friendly message when idle
         if (this.elements.flightTimeLeft) {
             if (isConnected && typeof batt?.timeLeft === 'number') {
                 if (batt.timeLeft > 0) {
@@ -801,19 +805,272 @@ class DashboardRenderer {
     }
 }
 
-// ============================================================
+// FLEET MANAGER — /ws/fleet WebSocket
+class FleetManager {
+    constructor(telemetry) {
+        this.telemetry = telemetry;   // the existing single-drone TelemetryManager
+        this.ws = null;
+        this.reconnectTimer = null;
+        this.fleetData = { summary: { activeDrones: 0, armedDrones: 0, avgBatteryPercent: 0, criticalBattery: [] }, drones: {} };
+        this.activeDroneId = null;    // which drone is selected
+        this.fleetMarkers = {};       // { droneId: L.marker }
+        this.listeners = [];
+    }
+
+    connectFleetWebSocket(url = FleetManager.defaultFleetUrl()) {
+        try {
+            console.log(' Connecting to Fleet WebSocket:', url);
+            this.ws = new WebSocket(url);
+
+            this.ws.onopen = () => {
+                console.log(' Fleet WebSocket connected');
+                this.telemetry.fleetOverride = true;  // Stop single-drone WS from overwriting
+            };
+
+            this.ws.onmessage = (event) => {
+                try {
+                    const payload = JSON.parse(event.data);
+                    this.fleetData = payload;
+                    this._autoSelectDrone();
+                    this._pushSelectedToSingleDash();
+                    this._notifyListeners();
+                } catch (e) {
+                    console.error('Fleet WS parse error', e);
+                }
+            };
+
+            this.ws.onclose = () => {
+                console.warn('Fleet WebSocket closed, retrying in 5s');
+                this.telemetry.fleetOverride = false;  // Let single-drone WS resume
+                if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+                this.reconnectTimer = setTimeout(() => this.connectFleetWebSocket(url), 5000);
+            };
+
+            this.ws.onerror = () => this.ws.close();
+        } catch (e) {
+            console.error('Fleet WebSocket failed', e);
+            if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+            this.reconnectTimer = setTimeout(() => this.connectFleetWebSocket(url), 5000);
+        }
+    }
+
+    static defaultFleetUrl() {
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const hostname = window.location.hostname || 'localhost';
+        const url = new URL(`${protocol}//${hostname}:8000/ws/fleet`);
+        const apiKey = window.localStorage.getItem('dashboardApiKey');
+        if (apiKey) url.searchParams.set('token', apiKey);
+        return url.toString();
+    }
+
+    _autoSelectDrone() {
+        const drones = this.fleetData.drones || {};
+        const ids = Object.keys(drones);
+        if (!ids.length) return;
+        // If currently selected drone is still active keep it, else pick first
+        if (!this.activeDroneId || !drones[this.activeDroneId]) {
+            this.activeDroneId = ids[0];
+        }
+    }
+
+    selectDrone(droneId) {
+        this.activeDroneId = droneId;
+        this._pushSelectedToSingleDash();
+        this._notifyListeners();
+    }
+
+    _pushSelectedToSingleDash() {
+        if (!this.activeDroneId) return;
+        const drones = this.fleetData.drones || {};
+        const d = drones[this.activeDroneId];
+        if (!d) return;
+        // Map fleet drone data shape → the single-drone TelemetryManager.data shape
+        const mapped = {
+            droneId: d.droneId,
+            connectionStatus: d.connectionStatus || 'Disconnected',
+            armed: d.armed || false,
+            flightMode: d.flightMode || 'Unknown',
+            missionStatus: d.missionStatus || 'Idle',
+            connectionType: d.connectionType || 'WIFI',
+            position: d.position || {},
+            navigation: d.navigation || {},
+            attitude: d.attitude || {},
+            gps: d.gps || {},
+            battery: {
+                percent: (d.battery || {}).percent || 0,
+                voltage: (d.battery || {}).voltage || 0,
+                current: (d.battery || {}).current || 0,
+                capacity: (d.battery || {}).capacityRemaining || 0,
+                timeLeft: (d.battery || {}).flightTimeMinutes || 0,
+                health: (d.battery || {}).percent > 30 ? 'Healthy' : (d.battery || {}).percent > 15 ? 'Low' : 'Critical',
+                status: (d.battery || {}).status || 'unknown',
+                consumedMah: (d.battery || {}).consumedMah || 0,
+            },
+            charging: d.charging || {},
+            communication: {
+                rssi: (d.communication || {}).rssi || 0,
+                linkStatus: d.connectionType || 'WIFI',
+                packetLoss: (d.communication || {}).packetLoss || 0,
+                lastUpdate: Date.now(),
+            },
+        };
+        this.telemetry.updateData(mapped);
+    }
+
+    subscribe(fn) {
+        this.listeners.push(fn);
+    }
+
+    _notifyListeners() {
+        for (const fn of this.listeners) fn(this.fleetData);
+    }
+
+    getDrones() { return this.fleetData.drones || {}; }
+    getSummary() { return this.fleetData.summary || {}; }
+}
+
+// FLEET SWITCHER RENDERER — pills, summary bar, map markers
+class FleetSwitcherRenderer {
+    constructor(fleet, dashboard) {
+        this.fleet = fleet;
+        this.dashboard = dashboard;
+        this.pilledIds = new Set();
+
+        // Map colors for drones (cycle through palette)
+        this.palette = ['#0078c8', '#e67e00', '#e63950', '#00b85c', '#9b59b6', '#1abc9c'];
+
+        this.fleet.subscribe(() => this.render());
+    }
+
+    _colorFor(droneId) {
+        const ids = Object.keys(this.fleet.getDrones()).sort();
+        const idx = ids.indexOf(droneId) % this.palette.length;
+        return this.palette[Math.max(0, idx)];
+    }
+
+    render() {
+        this._renderSummaryBar();
+        this._renderPills();
+        this._renderFleetMarkers();
+    }
+
+    _renderSummaryBar() {
+        const s = this.fleet.getSummary();
+        const el = (id) => document.getElementById(id);
+        if (el('fleetActiveDrones')) el('fleetActiveDrones').textContent = s.activeDrones ?? '--';
+        if (el('fleetArmedDrones')) el('fleetArmedDrones').textContent = s.armedDrones ?? '--';
+        if (el('fleetAvgBattery')) el('fleetAvgBattery').textContent =
+            s.avgBatteryPercent != null ? `${s.avgBatteryPercent.toFixed(0)}%` : '--%';
+        const critWrap = el('fleetCriticalWrap');
+        if (critWrap) {
+            const crit = (s.criticalBattery || []).length;
+            critWrap.style.display = crit ? 'flex' : 'none';
+            const critEl = el('fleetCritical');
+            if (critEl) critEl.textContent = crit;
+        }
+    }
+
+    _renderPills() {
+        const container = document.getElementById('fleetSwitcher');
+        if (!container) return;
+        const drones = this.fleet.getDrones();
+        const ids = Object.keys(drones);
+        const activeDroneId = this.fleet.activeDroneId;
+
+        // Remove pills for gone drones
+        [...container.querySelectorAll('.fleet-pill')].forEach(pill => {
+            if (!drones[pill.dataset.id]) pill.remove();
+        });
+
+        ids.forEach(id => {
+            const d = drones[id];
+            const color = this._colorFor(id);
+            const isActive = id === activeDroneId;
+            let pill = container.querySelector(`.fleet-pill[data-id="${id}"]`);
+            if (!pill) {
+                pill = document.createElement('button');
+                pill.className = 'fleet-pill';
+                pill.dataset.id = id;
+                pill.addEventListener('click', () => this.fleet.selectDrone(id));
+                container.appendChild(pill);
+            }
+            const batt = (d.battery || {}).percent;
+            const battStr = batt != null ? `${batt.toFixed(0)}%` : '--';
+            const conn = d.connectionStatus === 'Connected';
+            pill.classList.toggle('fleet-pill-active', isActive);
+            pill.style.setProperty('--drone-color', color);
+            pill.innerHTML = `
+                <span class="fleet-pill-dot" style="background:${color}"></span>
+                <span class="fleet-pill-name">${d.droneId || id}</span>
+                <span class="fleet-pill-batt ${batt < 15 ? 'batt-crit' : batt < 30 ? 'batt-warn' : ''}">${battStr}</span>
+                <span class="fleet-pill-status ${conn ? 'conn-ok' : 'conn-err'}">${conn ? '●' : '○'}</span>
+            `;
+        });
+
+        // Show summary bar only when >1 drone
+        const bar = document.getElementById('fleetSummaryBar');
+        if (bar) bar.style.display = ids.length > 1 ? 'flex' : 'none';
+    }
+
+    _renderFleetMarkers() {
+        const map = this.dashboard && this.dashboard.map;
+        if (!map) return;
+        const drones = this.fleet.getDrones();
+
+        // Remove stale markers
+        for (const id of Object.keys(this.fleet.fleetMarkers)) {
+            if (!drones[id]) {
+                this.fleet.fleetMarkers[id].remove();
+                delete this.fleet.fleetMarkers[id];
+            }
+        }
+
+        for (const [id, d] of Object.entries(drones)) {
+            const pos = d.position || {};
+            const lat = pos.lat, lng = pos.lng;
+            if (!lat && !lng) continue;
+            if (id === this.fleet.activeDroneId) continue; // primary marker handled by DashboardRenderer
+
+            const color = this._colorFor(id);
+            if (!this.fleet.fleetMarkers[id]) {
+                const icon = L.divIcon({
+                    className: 'fleet-drone-icon',
+                    html: `<div style="width:20px;height:20px;background:${color};border-radius:50%;border:2px solid white;
+                        box-shadow:0 2px 8px ${color}66;display:flex;align-items:center;justify-content:center;font-size:10px;">✈</div>`,
+                    iconSize: [20, 20],
+                    iconAnchor: [10, 10],
+                });
+                this.fleet.fleetMarkers[id] = L.marker([lat, lng], { icon })
+                    .bindTooltip(d.droneId || id, { permanent: false, direction: 'top' })
+                    .addTo(map)
+                    .on('click', () => this.fleet.selectDrone(id));
+            } else {
+                this.fleet.fleetMarkers[id].setLatLng([lat, lng]);
+            }
+        }
+    }
+}
+
 // INITIALIZE APPLICATION INTERFACE
-// ============================================================
+
 document.addEventListener('DOMContentLoaded', function() {
     const telemetry = new TelemetryManager();
     const dashboard = new DashboardRenderer(telemetry);
-    
+    const fleet = new FleetManager(telemetry);
+    const fleetUI = new FleetSwitcherRenderer(fleet, dashboard);
+
     setTimeout(() => {
+        // Connect to fleet WebSocket (it will push data to single-drone TelemetryManager too)
+        fleet.connectFleetWebSocket();
+        // Also maintain the original single-drone WS as fallback if fleet is not available
+        // (it covers ?demo=1 and backward compat with backends that have only /ws/telemetry)
         telemetry.connectWebSocket();
     }, 2000);
-    
+
     window.__telemetry = telemetry;
     window.__dashboard = dashboard;
-    
-    console.log(' Drone Landing Station Dashboard initialized cleanly.');
+    window.__fleet = fleet;
+    window.__fleetUI = fleetUI;
+
+    console.log(' Drone Fleet Dashboard initialized.');
 });

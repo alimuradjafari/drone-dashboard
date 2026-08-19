@@ -1,8 +1,6 @@
-/* ============================================================
+/* 
    DRONE CHARGING STATION DASHBOARD - LIGHT MODE STYLES
-   ============================================================ */
-
-/* ===== CSS VARIABLES ===== */
+/*  CSS VARIABLES  */
 :root {
     --color-background-primary: #ffffff;
     --color-background-secondary: #f8f9fa;
@@ -35,7 +33,7 @@
     --shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.1);
 }
 
-/* ===== RESET & BASE ===== */
+/*  RESET & BASE  */
 * {
     box-sizing: border-box;
     margin: 0;
@@ -50,7 +48,7 @@ body {
     padding: 12px;
 }
 
-/* ===== LAYOUT ===== */
+/*  LAYOUT  */
 .dash {
     max-width: 1440px;
     margin: 0 auto;
@@ -61,7 +59,7 @@ body {
     gap: 10px;
 }
 
-/* ===== TOP BAR ===== */
+/*  TOP BAR  */
 .topbar {
     display: flex;
     align-items: center;
@@ -174,7 +172,7 @@ body {
     gap: 6px;
 }
 
-/* ===== MAIN GRID ===== */
+/* MAIN GRID  */
 .main {
     display: grid;
     grid-template-columns: 1fr 1fr;
@@ -191,7 +189,7 @@ body {
     grid-column: 1 / -1;
 }
 
-/* ===== CARDS ===== */
+/*  CARDS  */
 .card {
     background: var(--color-background-primary);
     border: 1px solid var(--color-border-primary);
@@ -221,7 +219,7 @@ body {
     font-size: 14px;
 }
 
-/* ===== METRICS ===== */
+/*  METRICS  */
 .metric-grid {
     display: grid;
     grid-template-columns: 1fr 1fr;
@@ -271,7 +269,7 @@ body {
     margin-left: 2px;
 }
 
-/* ===== MAP ===== */
+/*  MAP  */
 .map-placeholder {
     background: var(--color-background-secondary);
     border-radius: var(--border-radius-md);
@@ -308,7 +306,7 @@ body {
     background: var(--color-background-secondary) !important;
 }
 
-/* ===== BATTERY ===== */
+/*  BATTERY  */
 .batt-bar-wrap {
     background: var(--color-background-secondary);
     border-radius: 4px;
@@ -350,7 +348,7 @@ body {
     font-size: 12px;
 }
 
-/* ===== CHARGING ===== */
+/*  CHARGING  */
 .charging-row {
     display: flex;
     align-items: center;
@@ -392,7 +390,7 @@ body {
     transition: width 0.5s ease;
 }
 
-/* ===== ATTITUDE ===== */
+/*  ATTITUDE  */
 .attitude-row {
     display: flex;
     justify-content: space-around;
@@ -422,7 +420,7 @@ body {
     color: var(--color-text-secondary);
 }
 
-/* ===== GPS ===== */
+/*  GPS  */
 .gps-row {
     display: flex;
     align-items: center;
@@ -436,7 +434,7 @@ body {
     border-bottom: none;
 }
 
-/* ===== ALERTS ===== */
+/*  ALERTS  */
 #alertsGrid {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -501,7 +499,7 @@ body {
     }
 }
 
-/* ===== COMMUNICATION ===== */
+/*  COMMUNICATION  */
 .comm-row {
     display: flex;
     align-items: center;
@@ -545,7 +543,7 @@ body {
 .rssi-bar span:nth-child(4) { height: 18px; }
 .rssi-bar span:nth-child(5) { height: 22px; }
 
-/* ===== RESPONSIVE ===== */
+/*  RESPONSIVE  */
 @media (max-width: 1024px) {
     .main {
         grid-template-columns: 1fr;
@@ -625,6 +623,133 @@ body {
 #batteryPercent, #batteryVoltage, #batteryCurrent, #flightTimeLeft {
     font-variant-numeric: tabular-nums; /* Prevents text shifting when numbers change */
 }
+
+
+/* Topbar center column for fleet pills */
+.topbar-center {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+    flex: 1;
+    justify-content: center;
+    padding: 0 8px;
+}
+
+/*  Fleet Summary Bar  */
+.fleet-summary-bar {
+    display: none; /* shown via JS when >1 drone */
+    align-items: center;
+    gap: 0;
+    background: var(--color-background-primary);
+    border: 1px solid var(--color-border-primary);
+    border-radius: var(--border-radius-md);
+    padding: 6px 16px;
+    box-shadow: var(--shadow-sm);
+    flex-wrap: wrap;
+}
+
+.fleet-stat {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 18px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--color-text-primary);
+    border-right: 1px solid var(--color-border-primary);
+}
+
+.fleet-stat:last-child { border-right: none; }
+
+.fleet-stat i {
+    font-size: 15px;
+    color: var(--color-text-info);
+}
+
+.fleet-stat-label {
+    font-size: 11px;
+    font-weight: 400;
+    color: var(--color-text-secondary);
+}
+
+.fleet-stat-crit i,
+.fleet-stat-crit span:first-of-type {
+    color: var(--color-text-danger) !important;
+}
+
+/*  Fleet Drone Pills  */
+.fleet-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 4px 10px;
+    border-radius: 20px;
+    border: 1.5px solid var(--color-border-primary);
+    background: var(--color-background-secondary);
+    cursor: pointer;
+    font-family: var(--font-sans);
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--color-text-primary);
+    transition: all 0.2s ease;
+    white-space: nowrap;
+}
+
+.fleet-pill:hover {
+    border-color: var(--drone-color, var(--color-text-info));
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--drone-color, #0078c8) 15%, transparent);
+    transform: translateY(-1px);
+}
+
+.fleet-pill-active {
+    background: color-mix(in srgb, var(--drone-color, #0078c8) 12%, white);
+    border-color: var(--drone-color, var(--color-text-info)) !important;
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--drone-color, #0078c8) 20%, transparent);
+}
+
+.fleet-pill-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.fleet-pill-name {
+    font-weight: 600;
+}
+
+.fleet-pill-batt {
+    font-size: 11px;
+    padding: 1px 5px;
+    border-radius: 10px;
+    background: var(--color-background-success);
+    color: var(--color-text-success);
+    font-weight: 600;
+}
+
+.fleet-pill-batt.batt-warn {
+    background: var(--color-background-warning);
+    color: var(--color-text-warning);
+}
+
+.fleet-pill-batt.batt-crit {
+    background: var(--color-background-danger);
+    color: var(--color-text-danger);
+    animation: pulse-danger 1.2s ease-in-out infinite;
+}
+
+@keyframes pulse-danger {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
+
+.fleet-pill-status {
+    font-size: 10px;
+}
+
+.conn-ok { color: var(--color-text-success); }
+.conn-err { color: var(--color-text-danger); }
 
 @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after {

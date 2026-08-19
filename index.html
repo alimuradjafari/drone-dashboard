@@ -3,6 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script>
+        // Blocks the dashboard from ever being visible without a valid session.
+        if (!localStorage.getItem('authToken')) {
+            window.location.replace('login.html');
+        }
+    </script>
     <title>Drone Charging Station Dashboard</title>
     
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
@@ -31,6 +37,9 @@
             <span class="badge badge-blue" id="modeBadge">Stabilize</span>
             <span class="badge badge-amber" id="missionBadge">Idle</span>
         </div>
+        <div class="topbar-center" id="fleetSwitcher">
+            <!-- Fleet drone pills inserted by script.js -->
+        </div>
         <div class="topbar-right">
             <span class="connection">
                 <i class="connection-type"></i>
@@ -44,6 +53,30 @@
             </span>
         </div>
     </header>
+
+    <!-- Fleet Summary Bar -->
+    <div class="fleet-summary-bar" id="fleetSummaryBar">
+        <div class="fleet-stat">
+            <i class="ti ti-drone"></i>
+            <span id="fleetActiveDrones">1</span>
+            <span class="fleet-stat-label">Active</span>
+        </div>
+        <div class="fleet-stat">
+            <i class="ti ti-shield-bolt"></i>
+            <span id="fleetArmedDrones">0</span>
+            <span class="fleet-stat-label">Armed</span>
+        </div>
+        <div class="fleet-stat">
+            <i class="ti ti-battery"></i>
+            <span id="fleetAvgBattery">--%</span>
+            <span class="fleet-stat-label">Avg Battery</span>
+        </div>
+        <div class="fleet-stat fleet-stat-crit" id="fleetCriticalWrap" style="display:none">
+            <i class="ti ti-alert-triangle"></i>
+            <span id="fleetCritical">0</span>
+            <span class="fleet-stat-label">Critical</span>
+        </div>
+    </div>
 
     <main class="main">
         <div class="col">

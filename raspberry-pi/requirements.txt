@@ -1,2 +1,6 @@
-pymavlink==2.4.49
-pyserial==3.5
+fastapi>=0.115,<1
+uvicorn[standard]>=0.30,<1
+pydantic>=2.7,<3
+pymavlink>=2.4.41,<3
+pyserial>=3.5,<4
+python-dotenv>=1.0,<2
