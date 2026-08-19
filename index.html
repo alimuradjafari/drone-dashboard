@@ -3,6 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script>
+        // Auth guard — runs before any content loads or renders.
+        // Blocks the dashboard from ever being visible without a valid session.
+        if (!localStorage.getItem('authToken')) {
+            window.location.replace('login.html');
+        }
+    </script>
     <title>Drone Charging Station Dashboard</title>
     
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />

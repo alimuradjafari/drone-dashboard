@@ -3,54 +3,74 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>DDCS | Login</title>
+    <title>DTCSD | Access Dashboard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="login.css">
     <script src="https://kit.fontawesome.com/234d2d077f.js" crossorigin="anonymous"></script>
-    <style>
-        .error-msg {
-            color: #ff4d4d;
-            font-size: 13px;
-            margin-top: 8px;
-            min-height: 18px;
-            text-align: center;
-            font-weight: 500;
-        }
-    </style>
 </head>
 <body>
-    <!-- The animation canvas wrapper -->
     <canvas id="droneCanvas"></canvas>
+    <div class="veil"></div>
 
-    <!-- The centered login form layer -->
-    <div class="login-wrapper">
-    <div class="login-box">
-        <h1 id="title">Sign Up</h1>
-        <form id="authForm">
-            <div class="input-group">
-                <div class="input-field" id="nameField">
-                    <i class="fa-solid fa-user"></i>
-                    <input type="text" placeholder="Name" id="nameInput" required>
+    <div class="stage">
+        <div class="hero">Drone Fleet Telemetry and Charging Station Dashboard</div>
+
+        <div class="panel-wrap">
+            <div class="bracket tl"></div>
+            <div class="bracket tr"></div>
+            <div class="bracket bl"></div>
+            <div class="bracket br"></div>
+
+            <div class="panel">
+                <div class="panel-eyebrow">
+                    <span>ACCESS Dashboard</span>
+                    <span class="blip" id="clock">--:--:--</span>
                 </div>
 
-                <div class="input-field">
-                    <i class="fa-solid fa-envelope"></i>
-                    <input type="email" placeholder="Email" id="emailInput" required>
+                <h1 id="title">Sign Up</h1>
+                <p class="subhead">Authenticate to reach the fleet dashboard interface.</p>
+
+                <div class="mode-switch">
+                    <button type="button" id="signupBtn" class="active">CREATE ACCOUNT</button>
+                    <button type="button" id="signinBtn">SIGN IN</button>
                 </div>
 
-                <div class="input-field">
-                    <i class="fa-solid fa-lock"></i>
-                    <input type="password" placeholder="Password" id="passwordInput" required>
-                </div>
-                <p>Lost your account <a href="#">Click here!</a></p>
-                <p id="errorMessage" class="error-msg"></p>
+                <form id="authForm">
+                    <div class="input-group">
+                        <div class="field" id="nameField">
+                            <label for="nameInput">OPERATOR NAME</label>
+                            <div class="box">
+                                <i class="fa-solid fa-user"></i>
+                                <input type="text" placeholder="ali" id="nameInput" required>
+                            </div>
+                        </div>
+
+                        <div class="field">
+                            <label for="emailInput">EMAIL</label>
+                            <div class="box">
+                                <i class="fa-solid fa-envelope"></i>
+                                <input type="email" placeholder="ali@gmial.com" id="emailInput" required>
+                            </div>
+                        </div>
+
+                        <div class="field">
+                            <label for="passwordInput">PASSWORD</label>
+                            <div class="box">
+                                <i class="fa-solid fa-lock"></i>
+                                <input type="password" placeholder="••••••••" id="passwordInput" required>
+                            </div>
+                        </div>
+                    </div>
+
+                    <p class="recover">Lost account access? <a href="#">Recover it here</a></p>
+                    <p id="errorMessage" class="error-msg"></p>
+
+                    <button type="submit" class="submit-btn" id="submitBtn">CREATE ACCOUNT →</button>
+                </form>
             </div>
-            <div class="btn-field">
-                <!-- Default active button is submit -->
-                <button type="submit" id="signupBtn">Sign up</button>
-                <button type="button" class="disable" id="signinBtn">Sign in</button>
-            </div>
-        </form>
-    </div>
+        </div>
     </div>
 
     <script>
@@ -61,9 +81,11 @@
         let nameInput = document.getElementById("nameInput");
         let title = document.getElementById("title");
         let errorMessage = document.getElementById("errorMessage");
-        
+        let submitBtn = document.getElementById("submitBtn");
+        let subhead = document.querySelector(".subhead");
+
         const backendHost = window.location.hostname || 'localhost';
-        const authApiUrl = `http://${backendHost}:8002/api/auth`;
+        const authApiUrl = `http://${backendHost}:8000/api/auth`;
 
         function clearInputs() {
             document.getElementById('nameInput').value = '';
@@ -104,41 +126,39 @@
 
         // Toggle to Sign Up mode
         signupBtn.onclick = function () {
-            if (signupBtn.classList.contains('disable')) {
+            if (!signupBtn.classList.contains('active')) {
                 clearError();
                 clearInputs();
-                nameField.style.maxHeight = "60px";
-                nameInput.setAttribute("required", "true"); // Name is required for Sign Up
+                nameField.classList.remove('collapsed');
+                nameInput.setAttribute("required", "true");
                 title.innerHTML = "Sign Up";
-                signupBtn.classList.remove("disable");
-                signinBtn.classList.add("disable");
-                
-                signupBtn.type = "submit";
-                signinBtn.type = "button";
+                subhead.innerHTML = "Authenticate to reach the fleet dashboard interface.";
+                submitBtn.innerHTML = "CREATE ACCOUNT →";
+                signupBtn.classList.add("active");
+                signinBtn.classList.remove("active");
             }
         };
 
         // Toggle to Sign In mode
         signinBtn.onclick = function () {
-            if (signinBtn.classList.contains('disable')) {
+            if (!signinBtn.classList.contains('active')) {
                 clearError();
                 clearInputs();
-                nameField.style.maxHeight = "0";
-                nameInput.removeAttribute("required"); // Name is NOT required for Sign In
+                nameField.classList.add('collapsed');
+                nameInput.removeAttribute("required");
                 title.innerHTML = "Sign In";
-                signinBtn.classList.remove("disable");
-                signupBtn.classList.add("disable");
-
-                signinBtn.type = "submit";
-                signupBtn.type = "button";
+                subhead.innerHTML = "Welcome back, operator. Resume fleet oversight.";
+                submitBtn.innerHTML = "SIGN IN →";
+                signinBtn.classList.add("active");
+                signupBtn.classList.remove("active");
             }
         };
 
-        // Handle submission (Only triggers if all 'required' fields are filled!)
+        // Handle submission
         authForm.onsubmit = async function (e) {
-            e.preventDefault(); // Prevents page reload
+            e.preventDefault();
 
-            const isSignUp = !signupBtn.classList.contains('disable');
+            const isSignUp = signupBtn.classList.contains('active');
             const endpoint = isSignUp ? 'signup' : 'login';
 
             const payload = {
@@ -157,17 +177,25 @@
                 localStorage.setItem('userName', data.user.name);
                 window.location.href = 'index.html';
             } else {
-                clearInputs(); // Clear input fields on failure
+                clearInputs();
             }
         };
+
+        // Live clock in the panel eyebrow
+        function tickClock() {
+            const now = new Date();
+            document.getElementById('clock').textContent = now.toTimeString().slice(0, 8);
+        }
+        tickClock();
+        setInterval(tickClock, 1000);
 
         // Canvas animation logic
         const canvas = document.getElementById('droneCanvas');
         const ctx = canvas.getContext('2d');
 
         let particles = [];
-        const particleCount = 80; // Total number of "drones" on screen
-        const connectionDistance = 120; // Max pixel distance to draw a line between nodes
+        const particleCount = 80;
+        const connectionDistance = 120;
 
         function resizeCanvas() {
             canvas.width = window.innerWidth;
@@ -180,7 +208,7 @@
             constructor() {
                 this.x = Math.random() * canvas.width;
                 this.y = Math.random() * canvas.height;
-                this.vx = (Math.random() - 0.5) * 0.8; 
+                this.vx = (Math.random() - 0.5) * 0.8;
                 this.vy = (Math.random() - 0.5) * 0.8;
                 this.radius = Math.random() * 2 + 1.5;
             }
@@ -196,7 +224,7 @@
             draw() {
                 ctx.beginPath();
                 ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
-                ctx.fillStyle = 'rgba(0, 210, 255, 0.7)';
+                ctx.fillStyle = 'rgba(0, 168, 200, 0.55)';
                 ctx.fill();
             }
         }
@@ -223,11 +251,11 @@
                     const distance = Math.sqrt(dx * dx + dy * dy);
 
                     if (distance < connectionDistance) {
-                        const alpha = (1 - distance / connectionDistance) * 0.25;
+                        const alpha = (1 - distance / connectionDistance) * 0.16;
                         ctx.beginPath();
                         ctx.moveTo(particles[i].x, particles[i].y);
                         ctx.lineTo(particles[j].x, particles[j].y);
-                        ctx.strokeStyle = `rgba(0, 210, 255, ${alpha})`;
+                        ctx.strokeStyle = `rgba(0, 168, 200, ${alpha})`;
                         ctx.lineWidth = 0.8;
                         ctx.stroke();
                     }

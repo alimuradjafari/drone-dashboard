@@ -2,11 +2,9 @@
 // DRONE CHARGING STATION DASHBOARD - MAIN JAVASCRIPT
 // ============================================================
 
-// Auth guard — if no token, redirect to login
 if (!localStorage.getItem('authToken')) {
-    window.location.href = 'login.html';
+            window.location.replace('login.html');
 }
-
 /**
  * TELEMETRY DATA MANAGER
  * Handles WebSocket connection and data state
