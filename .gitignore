@@ -2,5 +2,14 @@ __pycache__/
 *.py[cod]
 *.log
 .env
+.env.*
+!.env.example
 .venv/
+.venv-*/
 venv/
+.pytest_cache/
+.coverage
+htmlcov/
+.DS_Store
+Thumbs.db
+.idea/
