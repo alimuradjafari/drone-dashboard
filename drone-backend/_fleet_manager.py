@@ -1,8 +1,5 @@
 
-
-# ============================================================
 # FLEET MANAGER  - one DroneConnection per USB/UDP port
-# ============================================================
 
 class _DroneState:
     """Lightweight per-drone telemetry bucket, keyed by sysid."""

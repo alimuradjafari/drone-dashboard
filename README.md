@@ -2,7 +2,7 @@
 
 A full-stack application for monitoring and managing drone telemetry in real-time. This system collects MAVLink telemetry data (via a companion computer like a Jetson Nano), processes it with a Python FastAPI backend, and displays it on an interactive web dashboard.
 
-## 📁 Project Structure
+## Project Structure
 
 - `drone-backend/` - FastAPI backend server. Handles database connections, authentication, and WebSocket communication with the dashboard.
 - `raspberry-pi/` - Scripts for running on a companion computer (e.g., Raspberry Pi) to forward MAVLink telemetry to the backend.
@@ -48,5 +48,4 @@ python mavlink_forwarder.py
 ## Screenshots
 
 
-![Dashboard View](https://via.placeholder.com/800x400?text=Dashboard+Screenshot)
-![Login Screen](https://via.placeholder.com/800x400?text=Login+Screenshot)
+

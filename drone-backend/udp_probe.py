@@ -1,7 +1,5 @@
 """Raw UDP probe that does not attempt MAVLink decoding.
 
-Run this only after stopping the FastAPI backend and every other application
-listening on UDP port 14550. It proves whether UDP datagrams reach Windows.
 """
 
 from __future__ import annotations

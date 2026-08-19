@@ -1,6 +1,5 @@
-// ============================================================
+
 // DRONE CHARGING STATION DASHBOARD - MAIN JAVASCRIPT
-// ============================================================
 
 if (!localStorage.getItem('authToken')) {
             window.location.replace('login.html');
@@ -90,7 +89,6 @@ class TelemetryManager {
                 console.log(' WebSocket connected successfully!');
                 this.isSimulating = false;
                 
-                // CRITICAL FIX: Kill the background simulation interval completely 
                 // to prevent deepMerge from erasing live backend fields.
                 if (this.updateInterval) {
                     clearInterval(this.updateInterval);
@@ -134,12 +132,12 @@ class TelemetryManager {
                     }
                     
                 } catch (error) {
-                    console.error('❌ Failed to parse WebSocket message:', error);
+                    console.error(' Failed to parse WebSocket message:', error);
                 }
             };
             
             this.ws.onclose = () => {
-                console.log('❌ WebSocket disconnected');
+                console.log(' WebSocket disconnected');
                 this.updateData({ 
                     connectionStatus: 'Disconnected',
                     communication: { linkStatus: 'Disconnected' }
@@ -155,15 +153,15 @@ class TelemetryManager {
             };
             
             this.ws.onerror = (error) => {
-                console.error('❌ WebSocket error:', error);
+                console.error(' WebSocket error:', error);
                 this.ws.close();
             };
         } catch (error) {
-            console.error('❌ WebSocket connection failed:', error);
+            console.error(' WebSocket connection failed:', error);
             // Remain disconnected in production; append ?demo=1 to enable simulation.
             if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
             this.reconnectTimer = setTimeout(() => {
-                console.log('🔄 Retrying connection...');
+                console.log(' Retrying connection...');
                 this.connectWebSocket(url);
             }, 5000);
         }
@@ -286,9 +284,7 @@ class TelemetryManager {
     }
 }
 
-// ============================================================
 // DASHBOARD RENDERER
-// ============================================================
 class DashboardRenderer {
     constructor(telemetry) {
         this.telemetry = telemetry;
@@ -420,7 +416,7 @@ class DashboardRenderer {
                 align-items: center;
                 justify-content: center;
                 font-size: 10px;
-            ">🏠</div>`,
+            ">Home</div>`,
             iconSize: [20, 20],
             iconAnchor: [10, 10]
         });
@@ -442,7 +438,7 @@ class DashboardRenderer {
                 align-items: center;
                 justify-content: center;
                 font-size: 10px;
-            ">⚡</div>`,
+            ">Station</div>`,
             iconSize: [20, 20],
             iconAnchor: [10, 10]
         });
@@ -692,7 +688,7 @@ class DashboardRenderer {
                 : '0';
         }
         
-        // ✅ FIXED: Show friendly message when idle
+        //Show friendly message when idle
         if (this.elements.flightTimeLeft) {
             if (isConnected && typeof batt?.timeLeft === 'number') {
                 if (batt.timeLeft > 0) {
@@ -809,9 +805,7 @@ class DashboardRenderer {
     }
 }
 
-// ============================================================
 // FLEET MANAGER — /ws/fleet WebSocket
-// ============================================================
 class FleetManager {
     constructor(telemetry) {
         this.telemetry = telemetry;   // the existing single-drone TelemetryManager
@@ -825,11 +819,11 @@ class FleetManager {
 
     connectFleetWebSocket(url = FleetManager.defaultFleetUrl()) {
         try {
-            console.log('🔌 Connecting to Fleet WebSocket:', url);
+            console.log(' Connecting to Fleet WebSocket:', url);
             this.ws = new WebSocket(url);
 
             this.ws.onopen = () => {
-                console.log('✅ Fleet WebSocket connected');
+                console.log(' Fleet WebSocket connected');
                 this.telemetry.fleetOverride = true;  // Stop single-drone WS from overwriting
             };
 
@@ -935,9 +929,7 @@ class FleetManager {
     getSummary() { return this.fleetData.summary || {}; }
 }
 
-// ============================================================
 // FLEET SWITCHER RENDERER — pills, summary bar, map markers
-// ============================================================
 class FleetSwitcherRenderer {
     constructor(fleet, dashboard) {
         this.fleet = fleet;
@@ -1059,9 +1051,8 @@ class FleetSwitcherRenderer {
     }
 }
 
-// ============================================================
 // INITIALIZE APPLICATION INTERFACE
-// ============================================================
+
 document.addEventListener('DOMContentLoaded', function() {
     const telemetry = new TelemetryManager();
     const dashboard = new DashboardRenderer(telemetry);
@@ -1081,5 +1072,5 @@ document.addEventListener('DOMContentLoaded', function() {
     window.__fleet = fleet;
     window.__fleetUI = fleetUI;
 
-    console.log('🚀 Drone Fleet Dashboard initialized.');
+    console.log(' Drone Fleet Dashboard initialized.');
 });

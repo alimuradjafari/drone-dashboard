@@ -1,7 +1,5 @@
 """Minimal MAVLink packet probe for diagnosing UDP routing.
 
-Close the FastAPI backend, Mission Planner, QGroundControl, and any other local
-listener on the selected UDP port before running this script.
 """
 
 from __future__ import annotations
